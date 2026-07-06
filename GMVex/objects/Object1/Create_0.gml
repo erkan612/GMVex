@@ -1,0 +1,1 @@
+gmvex_init();

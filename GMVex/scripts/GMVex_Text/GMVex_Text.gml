@@ -1,0 +1,161 @@
+function gmvex_text_measure_width(font, text, size, letter_spacing = 0) {
+    var scale = size / font.units_per_em;
+    var total = 0;
+    var len = string_length(text);
+    for (var i = 1; i <= len; i++) {
+        var char_code = string_ord_at(text, i);
+        var gid = gmvex_text_char_to_glyph(font, char_code);
+        total += gmvex_text_get_advance_width(font, gid) * scale;
+        if (i < len) total += letter_spacing;
+    }
+    return total;
+}
+
+function gmvex_text_to_paths(font, text, size, x = 0, y = 0, style = undefined, line_spacing_extra = 0) {
+    var bold          = false;
+    var bold_strength = 0.02;
+    var italic        = false;
+    var italic_shear  = 0.20;
+    var halign        = gmvex_halign.LEFT;
+    var valign        = gmvex_valign.BASELINE;
+    var letter_spacing = 0;
+
+    if (!is_undefined(style)) {
+        if (variable_struct_exists(style, "bold"))           bold           = style.bold;
+        if (variable_struct_exists(style, "bold_strength"))  bold_strength  = style.bold_strength;
+        if (variable_struct_exists(style, "italic"))         italic         = style.italic;
+        if (variable_struct_exists(style, "italic_shear"))   italic_shear   = style.italic_shear;
+        if (variable_struct_exists(style, "halign"))         halign         = style.halign;
+        if (variable_struct_exists(style, "valign"))         valign         = style.valign;
+        if (variable_struct_exists(style, "letter_spacing")) letter_spacing = style.letter_spacing;
+    }
+
+    var scale = size / font.units_per_em;
+    var bold_amount = bold ? (bold_strength * size) / scale : 0;
+    var shear = italic ? italic_shear : 0;
+
+    var ascent_px   = font.ascent * scale;
+    var descent_px  = font.descent * scale; // negative
+    var line_gap_px = font.line_gap * scale;
+    var line_height = (ascent_px - descent_px) + line_gap_px + line_spacing_extra;
+
+    var lines = string_split(text, "\n");
+    var num_lines = array_length(lines);
+
+    var first_baseline_y = y;
+    if (valign != gmvex_valign.BASELINE) {
+        var total_height = (ascent_px - descent_px) + (num_lines - 1) * line_height;
+        if (valign == gmvex_valign.TOP) {
+            first_baseline_y = y + ascent_px;
+        } else if (valign == gmvex_valign.MIDDLE) {
+            first_baseline_y = y + (ascent_px + descent_px - (num_lines - 1) * line_height) / 2;
+        } else if (valign == gmvex_valign.BOTTOM) {
+            first_baseline_y = y + descent_px - (num_lines - 1) * line_height;
+        }
+    }
+
+    var results = [];
+
+    for (var line_i = 0; line_i < num_lines; line_i++) {
+        var line_text = lines[line_i];
+        var baseline_y = first_baseline_y + line_i * line_height;
+
+        var start_x = x;
+        if (halign == gmvex_halign.CENTER) start_x = x - gmvex_text_measure_width(font, line_text, size, letter_spacing) / 2;
+        else if (halign == gmvex_halign.RIGHT) start_x = x - gmvex_text_measure_width(font, line_text, size, letter_spacing);
+
+        var cursor_x = start_x;
+        var len = string_length(line_text);
+
+        for (var i = 1; i <= len; i++) {
+            var char_code = string_ord_at(line_text, i);
+            var gid = gmvex_text_char_to_glyph(font, char_code);
+            var contours = gmvex_text_get_glyph_contours(font, gid);
+
+            var path = gmvex_path_create();
+            for (var c = 0; c < array_length(contours); c++) {
+                gmvex_text_add_contour_to_path(path, contours[c], scale, 0, 0, bold_amount, shear);
+            }
+            gmvex_path_set_transform(path, cursor_x, baseline_y);
+
+            array_push(results, { path: path, char: char_code, line: line_i });
+
+            var advance = gmvex_text_get_advance_width(font, gid);
+            cursor_x += advance * scale + letter_spacing;
+        }
+    }
+
+    return results;
+}
+
+function gmvex_text_char_to_path(font, char_code, size, style = undefined) {
+    var bold			= false;
+    var bold_strength	= 0.02;
+    var italic			= false;
+    var italic_shear	= 0.20;
+    var halign			= gmvex_halign.LEFT;
+    var valign			= gmvex_valign.BASELINE;
+	var letter_spacing	= 0;
+
+    if (!is_undefined(style)) {
+        if (variable_struct_exists(style, "bold"))           bold					= style.bold;
+        if (variable_struct_exists(style, "bold_strength"))  bold_strength			= style.bold_strength;
+        if (variable_struct_exists(style, "italic"))         italic					= style.italic;
+        if (variable_struct_exists(style, "italic_shear"))   italic_shear			= style.italic_shear;
+        if (variable_struct_exists(style, "halign"))         halign					= style.halign;
+        if (variable_struct_exists(style, "valign"))         valign					= style.valign;
+        if (variable_struct_exists(style, "letter_spacing")) letter_spacing         = style.letter_spacing;
+    }
+
+    var scale = size / font.units_per_em;
+    var bold_amount = bold ? (bold_strength * size) / scale : 0;
+    var shear = italic ? italic_shear : 0;
+
+    var origin_y = 0;
+    if (valign != gmvex_valign.BASELINE) {
+        var ascent_px = font.ascent * scale;
+        var descent_px = font.descent * scale;
+        var total_height_px = ascent_px - descent_px;
+        if (valign == gmvex_valign.TOP) origin_y = ascent_px;
+        else if (valign == gmvex_valign.MIDDLE) origin_y = total_height_px/2 - ascent_px;
+        else if (valign == gmvex_valign.BOTTOM) origin_y = descent_px;
+    }
+
+    var gid = gmvex_text_char_to_glyph(font, char_code);
+    var contours = gmvex_text_get_glyph_contours(font, gid);
+
+    var path = gmvex_path_create();
+    for (var i = 0; i < array_length(contours); i++) {
+        gmvex_text_add_contour_to_path(path, contours[i], scale, 0, origin_y, bold_amount, shear);
+    }
+    return path;
+}
+
+function gmvex_text_get_width(font, text, size, letter_spacing = 0) {
+    var lines = string_split(text, "\n");
+    var max_width = 0;
+    for (var i = 0; i < array_length(lines); i++) {
+        var w = gmvex_text_measure_width(font, lines[i], size, letter_spacing);
+        if (w > max_width) max_width = w;
+    }
+    return max_width;
+}
+
+function gmvex_text_get_height(font, text, size, line_spacing_extra = 0) {
+    var lines = string_split(text, "\n");
+    var num_lines = array_length(lines);
+    var scale = size / font.units_per_em;
+    var ascent_px = font.ascent * scale;
+    var descent_px = font.descent * scale; // negative
+    var line_gap_px = font.line_gap * scale;
+    var line_height = (ascent_px - descent_px) + line_gap_px + line_spacing_extra;
+    if (num_lines <= 1) return ascent_px - descent_px;
+    return (ascent_px - descent_px) + (num_lines - 1) * line_height;
+}
+
+function gmvex_text_get_size(font, text, size, letter_spacing = 0, line_spacing_extra = 0) {
+    return {
+        width: gmvex_text_get_width(font, text, size, letter_spacing),
+        height: gmvex_text_get_height(font, text, size, line_spacing_extra)
+    };
+}

@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GMVex_HitTest",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GMVex_HitTest",
+  "parent":{
+    "name":"HitTest",
+    "path":"folders/GMVex/HitTest.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
