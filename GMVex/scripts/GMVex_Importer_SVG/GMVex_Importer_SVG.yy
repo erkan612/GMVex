@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GMVex_Importer_SVG",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GMVex_Importer_SVG",
+  "parent":{
+    "name":"Importers",
+    "path":"folders/GMVex/Importers.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

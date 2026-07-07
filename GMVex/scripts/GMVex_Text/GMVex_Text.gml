@@ -159,3 +159,23 @@ function gmvex_text_get_size(font, text, size, letter_spacing = 0, line_spacing_
         height: gmvex_text_get_height(font, text, size, line_spacing_extra)
     };
 }
+
+function gmvex_text_set_transform(text_paths, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0) {
+    var rot_sign = -1;
+    var rad = degtorad(rot * rot_sign);
+    var cos_r = cos(rad);
+    var sin_r = sin(rad);
+
+    for (var i = 0; i < array_length(text_paths); i++) {
+        var path = text_paths[i].path;
+        if (!variable_struct_exists(path, "text_orig_tx")) {
+            path.text_orig_tx = path.tx;
+            path.text_orig_ty = path.ty;
+        }
+        var lx = (path.text_orig_tx - origin_x) * xscale;
+        var ly = (path.text_orig_ty - origin_y) * yscale;
+        var rx = lx * cos_r - ly * sin_r;
+        var ry = lx * sin_r + ly * cos_r;
+        gmvex_path_set_transform(path, x + rx, y + ry, rot, xscale, yscale, 0, 0);
+    }
+}
