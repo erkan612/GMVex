@@ -130,3 +130,59 @@ function gmvex_stroke_draw(path, width, col, alpha, join_mode = gmvex_join.BEVEL
 
     matrix_set(matrix_world, prev_mat);
 }
+
+function gmvex_fill_draw_masked(path, col, alpha) {
+    var mask_surf = gmvex_mask_ensure_surface(path);
+    if (mask_surf == -1) {
+        gmvex_fill_draw(path, col, alpha);
+        return;
+    }
+
+    if (path.dirty) gmvex_path_rebuild(path);
+    if (path.vbuff == -1 && path.vbuff_cw == -1) return;
+
+    var mat = gmvex_path_get_matrix(path);
+    var prev_mat = matrix_get(matrix_world);
+    matrix_set(matrix_world, mat);
+
+    gpu_set_stencil_enable(true);
+    gpu_set_colorwriteenable(false, false, false, false);
+    gpu_set_zwriteenable(false);
+    gpu_set_stencil_func(cmpfunc_always);
+    gpu_set_stencil_ref(0);
+
+    if (path.winding == gmvex_winding.EVENODD) {
+        gpu_set_stencil_fail(stencilop_keep);
+        gpu_set_stencil_depth_fail(stencilop_keep);
+        gpu_set_stencil_pass(stencilop_invert);
+        if (path.vbuff != -1) vertex_submit(path.vbuff, pr_trianglelist, -1);
+    } else {
+        gpu_set_stencil_fail(stencilop_keep);
+        gpu_set_stencil_depth_fail(stencilop_keep);
+        gpu_set_stencil_pass(stencilop_incr);
+        if (path.vbuff != -1) vertex_submit(path.vbuff, pr_trianglelist, -1);
+        gpu_set_stencil_pass(stencilop_decr);
+        if (path.vbuff_cw != -1) vertex_submit(path.vbuff_cw, pr_trianglelist, -1);
+    }
+
+    gpu_set_colorwriteenable(true, true, true, true);
+    gpu_set_stencil_func(cmpfunc_notequal);
+    gpu_set_stencil_ref(0);
+    gpu_set_stencil_fail(stencilop_zero);
+    gpu_set_stencil_depth_fail(stencilop_zero);
+    gpu_set_stencil_pass(stencilop_zero);
+
+    shader_set(GMVEX_MASK_LUMINANCE);
+    shader_set_uniform_f(shader_get_uniform(GMVEX_MASK_LUMINANCE, "u_bbox"),
+        path.bbox[0], path.bbox[1], path.bbox[2], path.bbox[3]);
+    shader_set_uniform_f(shader_get_uniform(GMVEX_MASK_LUMINANCE, "u_color"),
+        color_get_red(col)/255, color_get_green(col)/255, color_get_blue(col)/255, alpha);
+    texture_set_stage(shader_get_sampler_index(GMVEX_MASK_LUMINANCE, "u_mask"), surface_get_texture(mask_surf));
+    draw_rectangle(path.bbox[0], path.bbox[1], path.bbox[2], path.bbox[3], false);
+    shader_reset();
+
+    gpu_set_stencil_enable(false);
+    gpu_set_zwriteenable(true);
+
+    matrix_set(matrix_world, prev_mat);
+}

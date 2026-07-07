@@ -536,6 +536,10 @@ function gmvex_svg_element_to_result(element, default_color, gradient_map = unde
         path = gmvex_svg_resolve_clip_path(path, attrs[? "clip-path"], id_map, default_color, gradient_map);
     }
 
+    if (ds_map_exists(attrs, "mask") && !is_undefined(id_map)) {
+        gmvex_svg_resolve_mask(path, attrs[? "mask"], id_map, default_color, gradient_map);
+    }
+
     return {
         path: path,
         has_fill: !fill_result.is_none,
@@ -914,9 +918,19 @@ function gmvex_svg_compute_gradient_coords(path, gradient) {
 }
 
 function gmvex_svg_draw_fill(s) {
+    var has_mask = variable_struct_exists(s.path, "mask_path") && !is_undefined(s.path.mask_path);
+
     if (is_undefined(s.fill_gradient)) {
-        gmvex_fill_draw(s.path, s.fill_color, s.fill_alpha);
+        if (has_mask) {
+            gmvex_fill_draw_masked(s.path, s.fill_color, s.fill_alpha);
+        } else {
+            gmvex_fill_draw(s.path, s.fill_color, s.fill_alpha);
+        }
         return;
+    }
+
+    if (has_mask) {
+        show_debug_message("gmvex_svg_import: element has both a gradient fill and a mask - masked gradients aren't supported yet, drawing the gradient WITHOUT the mask.");
     }
     var g = s.fill_gradient;
     var coords = gmvex_svg_compute_gradient_coords(s.path, g);
@@ -1102,4 +1116,21 @@ function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default
     gmvex_path_destroy(clip_shape_path);
 
     return clipped_path;
+}
+
+function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gradient_map) {
+    var mask_id = gmvex_svg_extract_url_id(mask_str);
+    if (mask_id == "" || !ds_map_exists(id_map, mask_id)) return;
+
+    var mask_element = id_map[? mask_id];
+    if (mask_element.tag != "mask" || array_length(mask_element.children) == 0) return;
+
+    if (array_length(mask_element.children) > 1) {
+        show_debug_message("gmvex_svg_import: mask '" + mask_id + "' has " + string(array_length(mask_element.children)) + " child shapes - only the FIRST is used (multi-shape masks are not supported in this version).");
+    }
+
+    var mask_result = gmvex_svg_element_to_result(mask_element.children[0], default_color, gradient_map);
+    if (is_undefined(mask_result)) return;
+
+    gmvex_path_set_mask(target_path, mask_result.path);
 }
