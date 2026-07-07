@@ -1125,12 +1125,40 @@ function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gr
     var mask_element = id_map[? mask_id];
     if (mask_element.tag != "mask" || array_length(mask_element.children) == 0) return;
 
-    if (array_length(mask_element.children) > 1) {
-        show_debug_message("gmvex_svg_import: mask '" + mask_id + "' has " + string(array_length(mask_element.children)) + " child shapes - only the FIRST is used (multi-shape masks are not supported in this version).");
+    var content_units = gmvex_svg_get_attr(mask_element.attributes, "maskContentUnits", "userSpaceOnUse");
+    var use_obb = (content_units == "objectBoundingBox");
+
+    var bx0 = 0, by0 = 0, bw = 1, bh = 1;
+    if (use_obb) {
+        if (target_path.dirty) gmvex_path_rebuild(target_path);
+        var bbox = target_path.bbox;
+        bx0 = bbox[0]; by0 = bbox[1];
+        bw = bbox[2] - bbox[0]; bh = bbox[3] - bbox[1];
     }
 
-    var mask_result = gmvex_svg_element_to_result(mask_element.children[0], default_color, gradient_map);
-    if (is_undefined(mask_result)) return;
+    var combined = gmvex_path_create();
+    var n = array_length(mask_element.children);
+    for (var i = 0; i < n; i++) {
+        var child_result = gmvex_svg_element_to_result(mask_element.children[i], default_color, gradient_map);
+        if (is_undefined(child_result)) continue;
+        var cp = child_result.path;
 
-    gmvex_path_set_mask(target_path, mask_result.path);
+        gmvex_path_apply_transform_all(cp);
+
+        if (use_obb) {
+            gmvex_path_set_transform(cp, 0, 0, 0, bw, bh);
+            gmvex_path_apply_scale(cp);
+            gmvex_path_set_transform(cp, bx0, by0, 0, 1, 1);
+            gmvex_path_apply_position(cp);
+        }
+
+        for (var s = 0; s < array_length(cp.subpaths); s++) {
+            array_push(combined.subpaths, cp.subpaths[s]);
+        }
+    }
+
+    if (array_length(combined.subpaths) == 0) return;
+    combined.dirty = true;
+
+    gmvex_path_set_mask(target_path, combined);
 }
