@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+  <defs>
+    <clipPath id="twoCircleClip">
+      <circle cx="100" cy="140" r="40"/>
+      <circle cx="180" cy="140" r="40"/>
+    </clipPath>
+  </defs>
+  <rect x="40" y="40" width="200" height="200" fill="#00c8ff" clip-path="url(#twoCircleClip)"/>
+</svg>

@@ -25,6 +25,7 @@ function gmvex_path_destroy(path) {
     if (variable_struct_exists(path, "mask_path") && !is_undefined(path.mask_path)) {
         gmvex_path_destroy(path.mask_path);
     }
+	if (variable_struct_exists(path, "gradmask_surf") && surface_exists(path.gradmask_surf)) surface_free(path.gradmask_surf);
 }
 
 function gmvex_path_set_mask(path, mask_path) {

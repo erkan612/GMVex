@@ -25,6 +25,8 @@
   "IncludedFiles":[
     {"$GMIncludedFile":"","%Name":"circle_mask_test.svg","CopyToMask":-1,"filePath":"datafiles","name":"circle_mask_test.svg","resourceType":"GMIncludedFile","resourceVersion":"2.0",},
     {"$GMIncludedFile":"","%Name":"test_svg.svg","CopyToMask":-1,"filePath":"datafiles","name":"test_svg.svg","resourceType":"GMIncludedFile","resourceVersion":"2.0",},
+    {"$GMIncludedFile":"","%Name":"two_circle_clip_test.svg","CopyToMask":-1,"filePath":"datafiles","name":"two_circle_clip_test.svg","resourceType":"GMIncludedFile","resourceVersion":"2.0",},
+    {"$GMIncludedFile":"","%Name":"two_circle_mask_test.svg","CopyToMask":-1,"filePath":"datafiles","name":"two_circle_mask_test.svg","resourceType":"GMIncludedFile","resourceVersion":"2.0",},
     {"$GMIncludedFile":"","%Name":"Unitblock.ttf","CopyToMask":-1,"filePath":"datafiles","name":"Unitblock.ttf","resourceType":"GMIncludedFile","resourceVersion":"2.0",},
   ],
   "isEcma":false,
@@ -59,6 +61,7 @@
     {"id":{"name":"GMVex_Transform","path":"scripts/GMVex_Transform/GMVex_Transform.yy",},},
     {"id":{"name":"GMVEX_GRADIENT_LINEAR","path":"shaders/GMVEX_GRADIENT_LINEAR/GMVEX_GRADIENT_LINEAR.yy",},},
     {"id":{"name":"GMVEX_GRADIENT_RADIAL","path":"shaders/GMVEX_GRADIENT_RADIAL/GMVEX_GRADIENT_RADIAL.yy",},},
+    {"id":{"name":"GMVEX_MASK_LUMINANCE_COLORTEX","path":"shaders/GMVEX_MASK_LUMINANCE_COLORTEX/GMVEX_MASK_LUMINANCE_COLORTEX.yy",},},
     {"id":{"name":"GMVEX_MASK_LUMINANCE","path":"shaders/GMVEX_MASK_LUMINANCE/GMVEX_MASK_LUMINANCE.yy",},},
     {"id":{"name":"GMVEX_SOLID_COLOR","path":"shaders/GMVEX_SOLID_COLOR/GMVEX_SOLID_COLOR.yy",},},
   ],

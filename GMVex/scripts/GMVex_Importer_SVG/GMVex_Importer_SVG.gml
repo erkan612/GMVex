@@ -921,20 +921,15 @@ function gmvex_svg_draw_fill(s) {
     var has_mask = variable_struct_exists(s.path, "mask_path") && !is_undefined(s.path.mask_path);
 
     if (is_undefined(s.fill_gradient)) {
-        if (has_mask) {
-            gmvex_fill_draw_masked(s.path, s.fill_color, s.fill_alpha);
-        } else {
-            gmvex_fill_draw(s.path, s.fill_color, s.fill_alpha);
-        }
+        if (has_mask) gmvex_fill_draw_masked(s.path, s.fill_color, s.fill_alpha);
+        else gmvex_fill_draw(s.path, s.fill_color, s.fill_alpha);
         return;
     }
 
-    if (has_mask) {
-        show_debug_message("gmvex_svg_import: element has both a gradient fill and a mask - masked gradients aren't supported yet, drawing the gradient WITHOUT the mask.");
-    }
     var g = s.fill_gradient;
     var coords = gmvex_svg_compute_gradient_coords(s.path, g);
-    gmvex_fill_draw_gradient(s.path, g.type, coords.p0x, coords.p0y, coords.p1x, coords.p1y, g.stops);
+    if (has_mask) gmvex_fill_draw_gradient_masked(s.path, g.type, coords.p0x, coords.p0y, coords.p1x, coords.p1y, g.stops);
+    else gmvex_fill_draw_gradient(s.path, g.type, coords.p0x, coords.p0y, coords.p1x, coords.p1y, g.stops);
 }
 
 function gmvex_svg_collect_ids(element, id_map) {
@@ -1091,13 +1086,19 @@ function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default
     var clip_element = id_map[? clip_id];
     if (clip_element.tag != "clipPath" || array_length(clip_element.children) == 0) return target_path;
 
-    if (array_length(clip_element.children) > 1) {
-        show_debug_message("gmvex_svg_import: clipPath '" + clip_id + "' has " + string(array_length(clip_element.children)) + " child shapes - only the FIRST is used (multi-shape clipPath is not supported in this version).");
+    var clip_shape_path = gmvex_path_create();
+    var n = array_length(clip_element.children);
+    for (var i = 0; i < n; i++) {
+        var child_result = gmvex_svg_element_to_result(clip_element.children[i], default_color, gradient_map);
+        if (is_undefined(child_result)) continue;
+        var cp = child_result.path;
+        gmvex_path_apply_transform_all(cp);
+        for (var s = 0; s < array_length(cp.subpaths); s++) {
+            array_push(clip_shape_path.subpaths, cp.subpaths[s]);
+        }
     }
-
-    var clip_result = gmvex_svg_element_to_result(clip_element.children[0], default_color, gradient_map);
-    if (is_undefined(clip_result)) return target_path;
-    var clip_shape_path = clip_result.path;
+    if (array_length(clip_shape_path.subpaths) == 0) return target_path;
+    clip_shape_path.dirty = true;
 
     gmvex_path_apply_position(target_path);
     gmvex_path_apply_rotation(target_path);
