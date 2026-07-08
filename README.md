@@ -37,7 +37,6 @@ gmvex_path_destroy(path);
 ## Limitations/Constraints
 
 - TrueType fonts only (no CFF or OTF)
-- SVG: clip path limited to single shape (for now)
 - No text rendering without font files
 - No shear support in SVG transforms
 - Gradient stops limited to 8
