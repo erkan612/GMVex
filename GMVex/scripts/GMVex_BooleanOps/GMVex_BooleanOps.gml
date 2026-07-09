@@ -321,10 +321,17 @@ function gmvex_bool_op_name(op) {
 function gmvex_path_boolean(path_a, path_c, op) {
     if (path_a.dirty) gmvex_path_rebuild(path_a);
     if (path_c.dirty) gmvex_path_rebuild(path_c);
+	
+	var baked_a = gmvex_path_clone(path_a);
+    gmvex_path_apply_transform_all(baked_a);
+	gmvex_path_rebuild(baked_a);
+    var baked_c = gmvex_path_clone(path_c);
+    gmvex_path_apply_transform_all(baked_c);
+	gmvex_path_rebuild(baked_c);
 
     var op_name = gmvex_bool_op_name(op);
-    var loops_a = path_a.flat_subpaths;
-    var loops_c = path_c.flat_subpaths;
+    var loops_a = baked_a.flat_subpaths;
+    var loops_c = baked_c.flat_subpaths;
 
     var na = array_length(loops_a);
     var nc = array_length(loops_c);
@@ -371,6 +378,9 @@ function gmvex_path_boolean(path_a, path_c, op) {
     result.dirty = false;
 
     gmvex_bool_rebuild_vbuff_from_flat(result);
+
+	gmvex_path_destroy(baked_a);
+    gmvex_path_destroy(baked_c);
 
     return result;
 }

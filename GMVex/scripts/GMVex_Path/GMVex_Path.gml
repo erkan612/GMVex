@@ -42,6 +42,35 @@ function gmvex_path_mark_mask_dirty(path) {
     if (variable_struct_exists(path, "mask_dirty")) path.mask_dirty = true;
 }
 
+function gmvex_path_clone(path) {
+    var clone = gmvex_path_create();
+    clone.winding = path.winding;
+
+    for (var s = 0; s < array_length(path.subpaths); s++) {
+        var sp = path.subpaths[s];
+        var new_commands = [];
+        for (var c = 0; c < array_length(sp.commands); c++) {
+            new_commands[c] = variable_clone(sp.commands[c]);
+        }
+        var new_sp = { commands: new_commands, closed: sp.closed };
+        if (variable_struct_exists(sp, "splinepts")) {
+            var new_splinepts = [];
+            for (var p = 0; p < array_length(sp.splinepts); p++) {
+                new_splinepts[p] = [sp.splinepts[p][0], sp.splinepts[p][1]];
+            }
+            new_sp.splinepts = new_splinepts;
+        }
+        array_push(clone.subpaths, new_sp);
+    }
+    clone.current = path.current;
+
+    if (variable_struct_exists(path, "tx")) {
+        gmvex_path_set_transform(clone, path.tx, path.ty, path.trot, path.txscale, path.tyscale, path.tox, path.toy);
+    }
+
+    return clone;
+}
+
 function gmvex_mask_ensure_surface(path) {
     if (!variable_struct_exists(path, "mask_path") || is_undefined(path.mask_path)) return -1;
 
