@@ -28,7 +28,7 @@
 *   					 ╚██████╔╝██║ ╚═╝ ██║ ╚████╔╝ ███████╗██╔╝ ██╗		                 *
 *   					  ╚═════╝ ╚═╝     ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝		                 *
 *   						       GameMaker Vector Library									 *
-*   						            Version 1.1.23					                     *
+*   						            Version 1.1.34					                     *
 *   																                         *
 *   						             by erkan612					                     *
 *   					 *********************************************                       *
@@ -45,7 +45,7 @@
 //       but i fear that might cost too much time than it should, 
 //       still worth noting, if gets too complicated i might drop it, not a must anyway
 
-function gmvex_init() {
+function gmvex_init(tolerance = 0.5) {
     vertex_format_begin();
     vertex_format_add_position_3d();
     global.gmvex_vformat_pos = vertex_format_end();
@@ -56,7 +56,7 @@ function gmvex_init() {
     vertex_format_add_texcoord();
     global.gmvex_vformat_full = vertex_format_end();
 
-    global.gmvex_tolerance = 0.5;
+    global.gmvex_tolerance = tolerance;
 }
 
 function gmvex_set_tolerance(tol) {
