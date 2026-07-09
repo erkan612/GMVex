@@ -5,14 +5,14 @@ Native implementation of vector graphics in GameMaker.
 ## Features
 
 - Path building with beziers, arcs and splines
-- Fill, stroke, and gradient rendering
-- Hierarchical transforms
+- Fill, stroke, and gradient rendering (flat, linear, and radial gradient, including on strokes)
+- Hierarchical transforms and groups
 - Boolean operations (union, intersection, difference)
-- TrueType font rendering
+- Masking and clip-path, including multi-shape and objectBoundingBox units
+- TrueType font rendering with kerning and ligature support
 - SVG import (still being improved, so it does have some limitations)
 - Dash patterns
 - Hit testing
-- Mask support
 
 ## Quick Example
 
@@ -20,7 +20,6 @@ Native implementation of vector graphics in GameMaker.
 // Create
 gmvex_init();
 gmvex_set_tolerance(0.1); // 0.5 by default
-
 var path = gmvex_path_create();
 gmvex_path_moveto(path, 0, 0);
 gmvex_path_lineto(path, 100, 0);
