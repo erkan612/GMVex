@@ -30,6 +30,10 @@ function gmvex_text_read_tag(buf, offset) {
     return s;
 }
 
+function gmvex_text_read_tag4(buf, offset) {
+    return chr(buffer_peek(buf, offset, buffer_u8)) + chr(buffer_peek(buf, offset+1, buffer_u8)) + chr(buffer_peek(buf, offset+2, buffer_u8)) + chr(buffer_peek(buf, offset+3, buffer_u8));
+}
+
 function gmvex_text_font_load(path) {
     var buf = buffer_load(path);
     if (buf == -1) {
@@ -88,6 +92,7 @@ function gmvex_text_font_load(path) {
     var cmap_offset = tables[? "cmap"][0];
     var cmap_num_subtables = gmvex_text_read_u16be(buf, cmap_offset + 2);
     var chosen_subtable_offset = -1;
+    var format12_subtable_offset = -1;
     var fallback_subtable_offset = -1;
     var sub_pos = cmap_offset + 4;
     for (var i = 0; i < cmap_num_subtables; i++) {
@@ -95,22 +100,88 @@ function gmvex_text_font_load(path) {
         var encoding_id = gmvex_text_read_u16be(buf, sub_pos + 2);
         var sub_offset  = gmvex_text_read_u32be(buf, sub_pos + 4);
         if (platform_id == 3 && encoding_id == 1) chosen_subtable_offset = cmap_offset + sub_offset;
+        
+        if ((platform_id == 3 && encoding_id == 10) || (platform_id == 0 && (encoding_id == 4 || encoding_id == 6))) {
+            if (format12_subtable_offset == -1) format12_subtable_offset = cmap_offset + sub_offset;
+        }
         if (platform_id == 0 && fallback_subtable_offset == -1) fallback_subtable_offset = cmap_offset + sub_offset;
         sub_pos += 8;
     }
+    if (chosen_subtable_offset == -1) chosen_subtable_offset = format12_subtable_offset;
     if (chosen_subtable_offset == -1) chosen_subtable_offset = fallback_subtable_offset;
     if (chosen_subtable_offset == -1) {
-        show_debug_message("gmvex_text_font_load: no usable cmap subtable found (need platform 3/encoding 1, or platform 0)");
+        show_debug_message("gmvex_text_font_load: no usable cmap subtable found (need platform 3/encoding 1 or 10, or platform 0)");
         ds_map_destroy(tables);
         buffer_delete(buf);
         return undefined;
     }
     var cmap_format = gmvex_text_read_u16be(buf, chosen_subtable_offset);
-    if (cmap_format != 4) {
-        show_debug_message("gmvex_text_font_load: cmap subtable format " + string(cmap_format) + " is not supported (only format 4 is implemented, which covers the vast majority of fonts for BMP characters)");
+    if (cmap_format != 0 && cmap_format != 4 && cmap_format != 6 && cmap_format != 12) {
+        show_debug_message("gmvex_text_font_load: cmap subtable format " + string(cmap_format) + " is not supported (formats 0, 4, 6, 12 are implemented)");
         ds_map_destroy(tables);
         buffer_delete(buf);
         return undefined;
+    }
+	
+	var kern_offset = -1;
+    var kern_pairs_offset = -1;
+    var kern_pair_count = 0;
+    if (ds_map_exists(tables, "kern")) {
+        kern_offset = tables[? "kern"][0];
+        var kern_version = gmvex_text_read_u16be(buf, kern_offset);
+        if (kern_version == 0) {
+            var num_tables = gmvex_text_read_u16be(buf, kern_offset + 2);
+            if (num_tables > 0) {
+                var subtable_pos = kern_offset + 4;
+                var sub_version = gmvex_text_read_u16be(buf, subtable_pos + 2);
+                var sub_format = gmvex_text_read_u8(buf, subtable_pos + 4);
+                if (sub_format == 0) {
+                    kern_pair_count = gmvex_text_read_u16be(buf, subtable_pos + 6);
+                    kern_pairs_offset = subtable_pos + 14;
+                } else {
+                    show_debug_message("gmvex_text_font_load: kern subtable format " + string(sub_format) + " is not supported (only format 0 is implemented) - no kerning will be applied");
+                }
+            }
+        } else {
+            show_debug_message("gmvex_text_font_load: kern table version " + string(kern_version) + " is not supported (only version 0 is implemented) - no kerning will be applied");
+        }
+    }
+	
+	var liga_lookups = [];
+    if (ds_map_exists(tables, "GSUB")) {
+        var gsub_offset = tables[? "GSUB"][0];
+        var script_list_offset  = gsub_offset + gmvex_text_read_u16be(buf, gsub_offset + 4);
+        var feature_list_offset = gsub_offset + gmvex_text_read_u16be(buf, gsub_offset + 6);
+        var lookup_list_offset  = gsub_offset + gmvex_text_read_u16be(buf, gsub_offset + 8);
+
+        var feature_count = gmvex_text_read_u16be(buf, feature_list_offset);
+        var liga_feature_indices = [];
+        for (var f = 0; f < feature_count; f++) {
+            var rec_pos = feature_list_offset + 2 + f * 6;
+            var tag = gmvex_text_read_tag4(buf, rec_pos);
+            if (tag == "liga") {
+                var feature_offset = feature_list_offset + gmvex_text_read_u16be(buf, rec_pos + 4);
+                array_push(liga_feature_indices, feature_offset);
+            }
+        }
+
+        var lookup_indices_seen = ds_map_create();
+        for (var lf = 0; lf < array_length(liga_feature_indices); lf++) {
+            var feature_offset = liga_feature_indices[lf];
+            var lookup_count = gmvex_text_read_u16be(buf, feature_offset + 2);
+            for (var li = 0; li < lookup_count; li++) {
+                var lookup_index = gmvex_text_read_u16be(buf, feature_offset + 4 + li * 2);
+                if (!ds_map_exists(lookup_indices_seen, lookup_index)) {
+                    ds_map_add(lookup_indices_seen, lookup_index, true);
+                    var lookup_offset = lookup_list_offset + gmvex_text_read_u16be(buf, lookup_list_offset + 2 + lookup_index * 2);
+                    var lookup_type = gmvex_text_read_u16be(buf, lookup_offset);
+                    if (lookup_type == 4) {
+                        array_push(liga_lookups, lookup_offset);
+                    }
+                }
+            }
+        }
+        ds_map_destroy(lookup_indices_seen);
     }
 
     return {
@@ -122,12 +193,16 @@ function gmvex_text_font_load(path) {
         glyf_offset: tables[? "glyf"][0],
         loca_offset: tables[? "loca"][0],
         cmap_subtable_offset: chosen_subtable_offset,
+        cmap_format: cmap_format,
         hmtx_offset: hmtx_offset,
         num_h_metrics: num_h_metrics,
         ascent: hhea_ascent,
         descent: hhea_descent,
         glyph_cache: ds_map_create(),
-		line_gap: hhea_line_gap,
+        line_gap: hhea_line_gap,
+        kern_pairs_offset: kern_pairs_offset,
+        kern_pair_count: kern_pair_count,
+        liga_lookups: liga_lookups,
     };
 }
 

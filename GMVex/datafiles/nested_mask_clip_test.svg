@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+  <defs>
+    <clipPath id="innerClip"><circle cx="140" cy="140" r="60"/></clipPath>
+    <mask id="nestedMask">
+      <rect x="40" y="40" width="200" height="200" fill="white" clip-path="url(#innerClip)"/>
+    </mask>
+  </defs>
+  <rect x="40" y="40" width="200" height="200" fill="#00c8ff" mask="url(#nestedMask)"/>
+</svg>

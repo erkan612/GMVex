@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+  <defs>
+    <linearGradient id="strokeGrad2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="red"/>
+      <stop offset="1" stop-color="blue"/>
+    </linearGradient>
+    <mask id="strokeMask2">
+      <circle cx="140" cy="140" r="110" fill="white"/>
+    </mask>
+  </defs>
+  <rect x="40" y="40" width="200" height="200" fill="none" stroke="url(#strokeGrad2)" stroke-width="8" mask="url(#strokeMask2)"/>
+</svg>
