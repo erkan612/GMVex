@@ -126,3 +126,39 @@ function gmvex_mask_ensure_surface(path) {
 
     return path.mask_surface;
 }
+
+function gmvex_path_merge(paths) {
+    var combined = gmvex_path_create();
+    combined.subpaths = [];
+    combined.flat_subpaths = [];
+    var minx = infinity, miny = infinity, maxx = -infinity, maxy = -infinity;
+    var any = false;
+
+    for (var i = 0; i < array_length(paths); i++) {
+        var baked = gmvex_path_clone(paths[i]);
+        gmvex_path_apply_transform_all(baked);
+        gmvex_path_rebuild(baked);
+
+        for (var s = 0; s < array_length(baked.flat_subpaths); s++) {
+            var src_pts = baked.flat_subpaths[s].points;
+            var pts_copy = array_create(array_length(src_pts));
+            for (var p = 0; p < array_length(src_pts); p++) {
+                pts_copy[p] = [src_pts[p][0], src_pts[p][1]];
+            }
+            array_push(combined.flat_subpaths, { points: pts_copy, closed: baked.flat_subpaths[s].closed });
+            any = true;
+            for (var p = 0; p < array_length(pts_copy); p++) {
+                minx = min(minx, pts_copy[p][0]); maxx = max(maxx, pts_copy[p][0]);
+                miny = min(miny, pts_copy[p][1]); maxy = max(maxy, pts_copy[p][1]);
+            }
+        }
+
+        gmvex_path_destroy(baked);
+    }
+    if (!any) return undefined;
+
+    combined.bbox = [minx, miny, maxx, maxy];
+    combined.dirty = false;
+    gmvex_bool_rebuild_vbuff_from_flat(combined);
+    return combined;
+}

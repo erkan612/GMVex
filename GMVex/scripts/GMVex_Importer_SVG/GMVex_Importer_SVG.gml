@@ -961,6 +961,14 @@ function gmvex_svg_draw_fill(s) {
     else gmvex_fill_draw_gradient(s.path, g.type, coords.p0x, coords.p0y, coords.p1x, coords.p1y, g.stops);
 }
 
+function gmvex_svg_draw_all(imported) {
+    var n = array_length(imported.results);
+    for (var i = 0; i < n; i++) {
+        gmvex_svg_draw_fill(imported.results[i]);
+        gmvex_svg_draw_stroke(imported.results[i]);
+    }
+}
+
 function gmvex_svg_collect_ids(element, id_map) {
     if (ds_map_exists(element.attributes, "id")) {
         id_map[? element.attributes[? "id"]] = element;
@@ -1231,39 +1239,7 @@ function gmvex_svg_draw_stroke(s) {
 }
 
 function gmvex_svg_merge_paths_flat(paths) {
-    var combined = gmvex_path_create();
-    combined.subpaths = [];
-    combined.flat_subpaths = [];
-    var minx = infinity, miny = infinity, maxx = -infinity, maxy = -infinity;
-    var any = false;
-
-    for (var i = 0; i < array_length(paths); i++) {
-        var baked = gmvex_path_clone(paths[i]);
-        gmvex_path_apply_transform_all(baked);
-        gmvex_path_rebuild(baked);
-
-        for (var s = 0; s < array_length(baked.flat_subpaths); s++) {
-            var src_pts = baked.flat_subpaths[s].points;
-            var pts_copy = array_create(array_length(src_pts));
-            for (var p = 0; p < array_length(src_pts); p++) {
-                pts_copy[p] = [src_pts[p][0], src_pts[p][1]];
-            }
-            array_push(combined.flat_subpaths, { points: pts_copy, closed: baked.flat_subpaths[s].closed });
-            any = true;
-            for (var p = 0; p < array_length(pts_copy); p++) {
-                minx = min(minx, pts_copy[p][0]); maxx = max(maxx, pts_copy[p][0]);
-                miny = min(miny, pts_copy[p][1]); maxy = max(maxy, pts_copy[p][1]);
-            }
-        }
-
-        gmvex_path_destroy(baked);
-    }
-    if (!any) return undefined;
-
-    combined.bbox = [minx, miny, maxx, maxy];
-    combined.dirty = false;
-    gmvex_bool_rebuild_vbuff_from_flat(combined);
-    return combined;
+	return gmvex_path_merge(paths);
 }
 
 function gmvex_svg_shift_flat_subpaths(path, dx, dy) {
