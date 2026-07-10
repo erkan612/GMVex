@@ -21,8 +21,6 @@ gmvex_path_add_circle(bool_b, 0, 0, 70);
 gmvex_path_set_transform(bool_b, 90, 30);
 r1_bool = gmvex_path_boolean(bool_a, bool_b, gmvex_bool.INTERSECTION);
 
-show_debug_message("r1_bool bbox: " + string(r1_bool.bbox) + " tx/ty: " + string(variable_struct_exists(r1_bool,"tx") ? [r1_bool.tx, r1_bool.ty] : "not set"));
-
 gmvex_path_set_transform(r1_bool, 800, 100);
 gmvex_path_destroy(bool_a);
 gmvex_path_destroy(bool_b);

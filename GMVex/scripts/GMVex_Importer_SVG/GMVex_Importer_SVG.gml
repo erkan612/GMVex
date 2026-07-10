@@ -1238,21 +1238,25 @@ function gmvex_svg_merge_paths_flat(paths) {
     var any = false;
 
     for (var i = 0; i < array_length(paths); i++) {
-        var cp = paths[i];
-        if (cp.dirty) gmvex_path_rebuild(cp);
-        for (var s = 0; s < array_length(cp.flat_subpaths); s++) {
-            var src_pts = cp.flat_subpaths[s].points;
+        var baked = gmvex_path_clone(paths[i]);
+        gmvex_path_apply_transform_all(baked);
+        gmvex_path_rebuild(baked);
+
+        for (var s = 0; s < array_length(baked.flat_subpaths); s++) {
+            var src_pts = baked.flat_subpaths[s].points;
             var pts_copy = array_create(array_length(src_pts));
             for (var p = 0; p < array_length(src_pts); p++) {
                 pts_copy[p] = [src_pts[p][0], src_pts[p][1]];
             }
-            array_push(combined.flat_subpaths, { points: pts_copy, closed: cp.flat_subpaths[s].closed });
+            array_push(combined.flat_subpaths, { points: pts_copy, closed: baked.flat_subpaths[s].closed });
             any = true;
             for (var p = 0; p < array_length(pts_copy); p++) {
                 minx = min(minx, pts_copy[p][0]); maxx = max(maxx, pts_copy[p][0]);
                 miny = min(miny, pts_copy[p][1]); maxy = max(maxy, pts_copy[p][1]);
             }
         }
+
+        gmvex_path_destroy(baked);
     }
     if (!any) return undefined;
 
