@@ -1,4 +1,4 @@
-function gmvex_text_measure_width(font, text, size, letter_spacing = 0) {
+function gmvex_text_measure_width(font, text, size, letter_spacing = 0, use_ligatures = true) {
     var scale = size / font.units_per_em;
     var total = 0;
     var len = string_length(text);
@@ -10,7 +10,7 @@ function gmvex_text_measure_width(font, text, size, letter_spacing = 0) {
         var gid = gmvex_text_char_to_glyph(font, char_code);
         var consumed = 1;
 
-        if (array_length(font.liga_lookups) > 0 && i < len) {
+        if (use_ligatures && array_length(font.liga_lookups) > 0 && i < len) {
             var rest_gids = [];
             var lookahead = min(len - i, 3);
             for (var k = 1; k <= lookahead; k++) {
@@ -29,7 +29,7 @@ function gmvex_text_measure_width(font, text, size, letter_spacing = 0) {
     return total;
 }
 
-function gmvex_text_to_paths(font, text, size, x = 0, y = 0, style = undefined, line_spacing_extra = 0) {
+function gmvex_text_to_paths(font, text, size, x = 0, y = 0, style = undefined, line_spacing_extra = 0, use_ligatures = true) {
     var bold          = false;
     var bold_strength = 0.02;
     var italic        = false;
@@ -88,22 +88,22 @@ function gmvex_text_to_paths(font, text, size, x = 0, y = 0, style = undefined, 
         var i = 1;
 
         while (i <= len) {
-            var char_code = string_ord_at(line_text, i);
-            var gid = gmvex_text_char_to_glyph(font, char_code);
-            var consumed = 1;
+	        var char_code = string_ord_at(line_text, i);
+	        var gid = gmvex_text_char_to_glyph(font, char_code);
+	        var consumed = 1;
 
-            if (array_length(font.liga_lookups) > 0 && i < len) {
-                var rest_gids = [];
-                var lookahead = min(len - i, 3); // 3 might need adjustment, laters work
-                for (var k = 1; k <= lookahead; k++) {
-                    array_push(rest_gids, gmvex_text_char_to_glyph(font, string_ord_at(line_text, i + k)));
-                }
-                var lig = gmvex_text_find_ligature(font, gid, rest_gids);
-                if (!is_undefined(lig)) {
-                    gid = lig.ligature_gid;
-                    consumed = lig.length;
-                }
-            }
+	        if (use_ligatures && array_length(font.liga_lookups) > 0 && i < len) {
+	            var rest_gids = [];
+	            var lookahead = min(len - i, 3); // 3 might need adjustment, laters work
+	            for (var k = 1; k <= lookahead; k++) {
+	                array_push(rest_gids, gmvex_text_char_to_glyph(font, string_ord_at(line_text, i + k)));
+	            }
+	            var lig = gmvex_text_find_ligature(font, gid, rest_gids);
+	            if (!is_undefined(lig)) {
+	                gid = lig.ligature_gid;
+	                consumed = lig.length;
+	            }
+	        }
 
             if (prev_gid != -1) cursor_x += gmvex_text_get_kerning(font, prev_gid, gid) * scale;
             var contours = gmvex_text_get_glyph_contours(font, gid);
