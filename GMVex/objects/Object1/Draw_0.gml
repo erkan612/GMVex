@@ -1,1 +1,0 @@
-gmvex_svg_draw_all(imported);

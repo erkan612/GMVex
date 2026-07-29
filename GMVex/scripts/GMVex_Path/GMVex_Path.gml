@@ -64,8 +64,10 @@ function gmvex_path_clone(path) {
     }
     clone.current = path.current;
 
-    if (variable_struct_exists(path, "tx")) {
-        gmvex_path_set_transform(clone, path.tx, path.ty, path.trot, path.txscale, path.tyscale, path.tox, path.toy);
+    if (variable_struct_exists(path, "tmatrix")) {
+        clone.tmatrix = [path.tmatrix[0], path.tmatrix[1], path.tmatrix[2], path.tmatrix[3], path.tmatrix[4], path.tmatrix[5]];
+        clone.tox = variable_struct_exists(path, "tox") ? path.tox : 0;
+        clone.toy = variable_struct_exists(path, "toy") ? path.toy : 0;
     }
 
     return clone;
@@ -92,34 +94,21 @@ function gmvex_mask_ensure_surface(path) {
 
         var mp = path.mask_path;
 
-        if (!variable_struct_exists(mp, "mask_orig_tx")) {
-            mp.mask_orig_tx      = variable_struct_exists(mp, "tx")      ? mp.tx      : 0;
-            mp.mask_orig_ty      = variable_struct_exists(mp, "ty")      ? mp.ty      : 0;
-            mp.mask_orig_trot    = variable_struct_exists(mp, "trot")    ? mp.trot    : 0;
-            mp.mask_orig_txscale = variable_struct_exists(mp, "txscale") ? mp.txscale : 1;
-            mp.mask_orig_tyscale = variable_struct_exists(mp, "tyscale") ? mp.tyscale : 1;
-            mp.mask_orig_tox     = variable_struct_exists(mp, "tox")     ? mp.tox     : 0;
-            mp.mask_orig_toy     = variable_struct_exists(mp, "toy")     ? mp.toy     : 0;
+        if (!variable_struct_exists(mp, "mask_orig_tmatrix")) {
+            mp.mask_orig_tmatrix = variable_struct_exists(mp, "tmatrix") ? mp.tmatrix : [1, 0, 0, 1, 0, 0];
+            mp.mask_orig_tox = variable_struct_exists(mp, "tox") ? mp.tox : 0;
+            mp.mask_orig_toy = variable_struct_exists(mp, "toy") ? mp.toy : 0;
         }
+        var orig_m = mp.mask_orig_tmatrix;
+        mp.tmatrix = [orig_m[0], orig_m[1], orig_m[2], orig_m[3], orig_m[4] - bbox[0], orig_m[5] - bbox[1]];
 
         surface_set_target(path.mask_surface);
         draw_clear_alpha(c_black, 1);
-        gmvex_path_set_transform(
-            mp,
-            mp.mask_orig_tx - bbox[0], mp.mask_orig_ty - bbox[1],
-            mp.mask_orig_trot, mp.mask_orig_txscale, mp.mask_orig_tyscale,
-            mp.mask_orig_tox, mp.mask_orig_toy
-        );
         if (mp.dirty) gmvex_path_rebuild(mp);
         gmvex_fill_draw(mp, c_white, 1);
         surface_reset_target();
 
-        gmvex_path_set_transform(
-            mp,
-            mp.mask_orig_tx, mp.mask_orig_ty,
-            mp.mask_orig_trot, mp.mask_orig_txscale, mp.mask_orig_tyscale,
-            mp.mask_orig_tox, mp.mask_orig_toy
-        );
+        mp.tmatrix = orig_m;
 
         path.mask_dirty = false;
     }

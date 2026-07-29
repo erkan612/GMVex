@@ -1,1 +1,0 @@
-for (var i = 0; i < array_length(imported.results); i++) gmvex_path_destroy(imported.results[i].path);

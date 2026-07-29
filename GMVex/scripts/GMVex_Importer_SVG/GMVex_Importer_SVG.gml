@@ -1,7 +1,7 @@
 function gmvex_svg_skip_whitespace(str, pos) {
-    var len = string_length(str);
-    while (pos <= len) {
-        var c = string_char_at(str, pos);
+    var buf = str.buf, size = str.size;
+    while (pos <= size) {
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c != " " && c != "\n" && c != "\t" && c != "\r") break;
         pos++;
     }
@@ -9,8 +9,9 @@ function gmvex_svg_skip_whitespace(str, pos) {
 }
 
 function gmvex_svg_try_skip_comment(str, pos) {
-    if (string_copy(str, pos, 4) == "<!--") {
-        var end_pos = string_pos_ext("-->", str, pos);
+    var buf = str.buf, size = str.size;
+    if (gmvex_buf_copy(buf, size, pos, 4) == "<!--") {
+        var end_pos = gmvex_buf_pos_ext("-->", buf, size, pos);
         if (end_pos == 0) return { skipped: false, pos: pos };
         return { skipped: true, pos: end_pos + 3 };
     }
@@ -18,50 +19,50 @@ function gmvex_svg_try_skip_comment(str, pos) {
 }
 
 function gmvex_svg_parse_attribute(str, pos) {
-    var len = string_length(str);
+    var buf = str.buf, size = str.size;
     var name_start = pos;
-    while (pos <= len) {
-        var c = string_char_at(str, pos);
+    while (pos <= size) {
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c == "=" || c == " " || c == "\n" || c == "\t" || c == "\r" || c == ">" || c == "/") break;
         pos++;
     }
-    var name = string_copy(str, name_start, pos - name_start);
+    var name = gmvex_buf_copy(buf, size, name_start, pos - name_start);
     pos = gmvex_svg_skip_whitespace(str, pos);
 
-    if (pos > len || string_char_at(str, pos) != "=") {
+    if (pos > size || gmvex_buf_char_at(buf, size, pos) != "=") {
         return { name: name, value: "", pos: pos };
     }
     pos++;
     pos = gmvex_svg_skip_whitespace(str, pos);
 
-    var quote_char = string_char_at(str, pos);
+    var quote_char = gmvex_buf_char_at(buf, size, pos);
     if (quote_char != "\"" && quote_char != "'") {
         return { name: name, value: "", pos: pos };
     }
     pos++;
     var value_start = pos;
-    while (pos <= len && string_char_at(str, pos) != quote_char) pos++;
-    var value = string_copy(str, value_start, pos - value_start);
+    while (pos <= size && gmvex_buf_char_at(buf, size, pos) != quote_char) pos++;
+    var value = gmvex_buf_copy(buf, size, value_start, pos - value_start);
     pos++;
     return { name: name, value: value, pos: pos };
 }
 
 function gmvex_svg_parse_element(str, pos) {
-    var len = string_length(str);
+    var buf = str.buf, size = str.size;
     pos++;
 
     var tag_start = pos;
-    while (pos <= len) {
-        var c = string_char_at(str, pos);
+    while (pos <= size) {
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c == " " || c == "\n" || c == "\t" || c == "\r" || c == ">" || c == "/") break;
         pos++;
     }
-    var tag = string_copy(str, tag_start, pos - tag_start);
+    var tag = gmvex_buf_copy(buf, size, tag_start, pos - tag_start);
 
     var attributes = ds_map_create();
     while (true) {
         pos = gmvex_svg_skip_whitespace(str, pos);
-        var c = string_char_at(str, pos);
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c == "/" || c == ">") break;
         var attr = gmvex_svg_parse_attribute(str, pos);
         attributes[? attr.name] = attr.value;
@@ -69,7 +70,7 @@ function gmvex_svg_parse_element(str, pos) {
     }
 
     pos = gmvex_svg_skip_whitespace(str, pos);
-    var self_closing = (string_char_at(str, pos) == "/");
+    var self_closing = (gmvex_buf_char_at(buf, size, pos) == "/");
     if (self_closing) pos++;
     pos++;
 
@@ -80,6 +81,7 @@ function gmvex_svg_parse_element(str, pos) {
     }
 
     var closing_tag = "</" + tag;
+    var closing_tag_len = string_length(closing_tag);
     while (true) {
         var comment_check = gmvex_svg_try_skip_comment(str, pos);
         if (comment_check.skipped) { pos = comment_check.pos; continue; }
@@ -89,15 +91,15 @@ function gmvex_svg_parse_element(str, pos) {
         var comment_check2 = gmvex_svg_try_skip_comment(str, pos);
         if (comment_check2.skipped) { pos = comment_check2.pos; continue; }
 
-        if (string_copy(str, pos, string_length(closing_tag)) == closing_tag) {
-            var gt_pos = string_pos_ext(">", str, pos);
+        if (gmvex_buf_copy(buf, size, pos, closing_tag_len) == closing_tag) {
+            var gt_pos = gmvex_buf_pos_ext(">", buf, size, pos);
             pos = gt_pos + 1;
             break;
         }
-        if (string_char_at(str, pos) != "<") {
-            var next_lt = string_pos_ext("<", str, pos);
+        if (gmvex_buf_char_at(buf, size, pos) != "<") {
+            var next_lt = gmvex_buf_pos_ext("<", buf, size, pos);
             if (next_lt == 0) break;
-            element.text_content += string_copy(str, pos, next_lt - pos);
+            element.text_content += gmvex_buf_copy(buf, size, pos, next_lt - pos);
             pos = next_lt;
             continue;
         }
@@ -109,32 +111,40 @@ function gmvex_svg_parse_element(str, pos) {
     return { element: element, pos: pos };
 }
 
-function gmvex_svg_parse_xml(str) {
-    var len = string_length(str);
+function gmvex_svg_parse_xml(content_str) {
+    var buf = buffer_create(string_byte_length(content_str) + 1, buffer_fixed, 1);
+    buffer_write(buf, buffer_text, content_str);
+    var size = string_byte_length(content_str);
+    var str = { buf: buf, size: size };
+
     var pos = 1;
-    while (pos <= len) {
+    var root = undefined;
+    while (pos <= size) {
         pos = gmvex_svg_skip_whitespace(str, pos);
         var comment_check = gmvex_svg_try_skip_comment(str, pos);
         if (comment_check.skipped) { pos = comment_check.pos; continue; }
-        if (string_copy(str, pos, 2) == "<?") {
-            var end_pos = string_pos_ext("?>", str, pos);
+        if (gmvex_buf_copy(buf, size, pos, 2) == "<?") {
+            var end_pos = gmvex_buf_pos_ext("?>", buf, size, pos);
             if (end_pos == 0) break;
             pos = end_pos + 2;
             continue;
         }
-        if (string_copy(str, pos, 9) == "<!DOCTYPE") {
-            var doctype_end = string_pos_ext(">", str, pos);
+        if (gmvex_buf_copy(buf, size, pos, 9) == "<!DOCTYPE") {
+            var doctype_end = gmvex_buf_pos_ext(">", buf, size, pos);
             if (doctype_end == 0) break;
             pos = doctype_end + 1;
             continue;
         }
-        if (string_char_at(str, pos) == "<") {
+        if (gmvex_buf_char_at(buf, size, pos) == "<") {
             var result = gmvex_svg_parse_element(str, pos);
-            return result.element;
+            root = result.element;
+            break;
         }
         pos++;
     }
-    return undefined;
+
+    buffer_delete(buf);
+    return root;
 }
 
 function gmvex_svg_is_digit(c) {
@@ -142,56 +152,60 @@ function gmvex_svg_is_digit(c) {
 }
 
 function gmvex_svg_scan_number(str, pos) {
-    var len = string_length(str);
-    while (pos <= len) {
-        var c = string_char_at(str, pos);
+    var buf = str.buf, size = str.size;
+    while (pos <= size) {
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c == " " || c == "\n" || c == "\t" || c == "\r" || c == ",") { pos++; continue; }
         break;
     }
-    if (pos > len) return { value: undefined, pos: pos };
+    if (pos > size) return { value: undefined, pos: pos };
 
     var start = pos;
-    var c = string_char_at(str, pos);
+    var c = gmvex_buf_char_at(buf, size, pos);
     if (c == "-" || c == "+") pos++;
 
     var seen_digit = false;
     var seen_dot = false;
-    while (pos <= len) {
-        c = string_char_at(str, pos);
+    while (pos <= size) {
+        c = gmvex_buf_char_at(buf, size, pos);
         if (gmvex_svg_is_digit(c)) { seen_digit = true; pos++; continue; }
         if (c == "." && !seen_dot) { seen_dot = true; pos++; continue; }
         break;
     }
-    if (pos <= len && (string_char_at(str, pos) == "e" || string_char_at(str, pos) == "E")) {
+    if (pos <= size && (gmvex_buf_char_at(buf, size, pos) == "e" || gmvex_buf_char_at(buf, size, pos) == "E")) {
         var exp_start = pos;
         pos++;
-        if (pos <= len && (string_char_at(str, pos) == "-" || string_char_at(str, pos) == "+")) pos++;
+        if (pos <= size && (gmvex_buf_char_at(buf, size, pos) == "-" || gmvex_buf_char_at(buf, size, pos) == "+")) pos++;
         var exp_has_digit = false;
-        while (pos <= len && gmvex_svg_is_digit(string_char_at(str, pos))) { exp_has_digit = true; pos++; }
+        while (pos <= size && gmvex_svg_is_digit(gmvex_buf_char_at(buf, size, pos))) { exp_has_digit = true; pos++; }
         if (!exp_has_digit) pos = exp_start;
     }
 
     if (!seen_digit) return { value: undefined, pos: start };
 
-    var text = string_copy(str, start, pos - start);
+    var text = gmvex_buf_copy(buf, size, start, pos - start);
     return { value: real(text), pos: pos };
 }
 
 function gmvex_svg_scan_flag(str, pos) {
-    var len = string_length(str);
-    while (pos <= len) {
-        var c = string_char_at(str, pos);
+    var buf = str.buf, size = str.size;
+    while (pos <= size) {
+        var c = gmvex_buf_char_at(buf, size, pos);
         if (c == " " || c == "\n" || c == "\t" || c == "\r" || c == ",") { pos++; continue; }
         break;
     }
-    if (pos > len) return { value: undefined, pos: pos };
-    var c = string_char_at(str, pos);
+    if (pos > size) return { value: undefined, pos: pos };
+    var c = gmvex_buf_char_at(buf, size, pos);
     if (c != "0" && c != "1") return { value: undefined, pos: pos };
     return { value: real(c), pos: pos + 1 };
 }
 
 function gmvex_svg_parse_path_data(path, d) {
-    var len = string_length(d);
+    var buf = buffer_create(string_byte_length(d) + 1, buffer_fixed, 1);
+    buffer_write(buf, buffer_text, d);
+    var size = string_byte_length(d);
+    var str = { buf: buf, size: size };
+
     var pos = 1;
     var cmd = "";
     var cur_x = 0, cur_y = 0;
@@ -199,10 +213,10 @@ function gmvex_svg_parse_path_data(path, d) {
     var last_cubic_c2x = undefined, last_cubic_c2y = undefined;
     var last_quad_cx = undefined, last_quad_cy = undefined;
 
-    while (pos <= len) {
-        pos = gmvex_svg_skip_whitespace(d, pos);
-        if (pos > len) break;
-        var c = string_char_at(d, pos);
+    while (pos <= size) {
+        pos = gmvex_svg_skip_whitespace(str, pos);
+        if (pos > size) break;
+        var c = gmvex_buf_char_at(buf, size, pos);
 
         if ((c >= "A" && c <= "Z") || (c >= "a" && c <= "z")) {
             cmd = c;
@@ -212,8 +226,8 @@ function gmvex_svg_parse_path_data(path, d) {
         }
 
         if (cmd == "M_first" || cmd == "m_first") {
-            var nx = gmvex_svg_scan_number(d, pos); pos = nx.pos;
-            var ny = gmvex_svg_scan_number(d, pos); pos = ny.pos;
+            var nx = gmvex_svg_scan_number(str, pos); pos = nx.pos;
+            var ny = gmvex_svg_scan_number(str, pos); pos = ny.pos;
             if (cmd == "m_first") { cur_x += nx.value; cur_y += ny.value; }
             else { cur_x = nx.value; cur_y = ny.value; }
             gmvex_path_moveto(path, cur_x, cur_y);
@@ -221,29 +235,29 @@ function gmvex_svg_parse_path_data(path, d) {
             last_cubic_c2x = undefined; last_quad_cx = undefined;
             cmd = (cmd == "m_first") ? "l" : "L";
         } else if (cmd == "L" || cmd == "l") {
-            var nx = gmvex_svg_scan_number(d, pos); pos = nx.pos;
-            var ny = gmvex_svg_scan_number(d, pos); pos = ny.pos;
+            var nx = gmvex_svg_scan_number(str, pos); pos = nx.pos;
+            var ny = gmvex_svg_scan_number(str, pos); pos = ny.pos;
             if (cmd == "l") { cur_x += nx.value; cur_y += ny.value; }
             else { cur_x = nx.value; cur_y = ny.value; }
             gmvex_path_lineto(path, cur_x, cur_y);
             last_cubic_c2x = undefined; last_quad_cx = undefined;
         } else if (cmd == "H" || cmd == "h") {
-            var nx = gmvex_svg_scan_number(d, pos); pos = nx.pos;
+            var nx = gmvex_svg_scan_number(str, pos); pos = nx.pos;
             cur_x = (cmd == "h") ? cur_x + nx.value : nx.value;
             gmvex_path_lineto(path, cur_x, cur_y);
             last_cubic_c2x = undefined; last_quad_cx = undefined;
         } else if (cmd == "V" || cmd == "v") {
-            var ny = gmvex_svg_scan_number(d, pos); pos = ny.pos;
+            var ny = gmvex_svg_scan_number(str, pos); pos = ny.pos;
             cur_y = (cmd == "v") ? cur_y + ny.value : ny.value;
             gmvex_path_lineto(path, cur_x, cur_y);
             last_cubic_c2x = undefined; last_quad_cx = undefined;
         } else if (cmd == "C" || cmd == "c") {
-            var c1x = gmvex_svg_scan_number(d, pos); pos = c1x.pos;
-            var c1y = gmvex_svg_scan_number(d, pos); pos = c1y.pos;
-            var c2x = gmvex_svg_scan_number(d, pos); pos = c2x.pos;
-            var c2y = gmvex_svg_scan_number(d, pos); pos = c2y.pos;
-            var ex  = gmvex_svg_scan_number(d, pos); pos = ex.pos;
-            var ey  = gmvex_svg_scan_number(d, pos); pos = ey.pos;
+            var c1x = gmvex_svg_scan_number(str, pos); pos = c1x.pos;
+            var c1y = gmvex_svg_scan_number(str, pos); pos = c1y.pos;
+            var c2x = gmvex_svg_scan_number(str, pos); pos = c2x.pos;
+            var c2y = gmvex_svg_scan_number(str, pos); pos = c2y.pos;
+            var ex  = gmvex_svg_scan_number(str, pos); pos = ex.pos;
+            var ey  = gmvex_svg_scan_number(str, pos); pos = ey.pos;
             var abs_c1x, abs_c1y, abs_c2x, abs_c2y, abs_ex, abs_ey;
             if (cmd == "c") {
                 abs_c1x = cur_x + c1x.value; abs_c1y = cur_y + c1y.value;
@@ -259,10 +273,10 @@ function gmvex_svg_parse_path_data(path, d) {
             last_quad_cx = undefined;
             cur_x = abs_ex; cur_y = abs_ey;
         } else if (cmd == "S" || cmd == "s") {
-            var c2x = gmvex_svg_scan_number(d, pos); pos = c2x.pos;
-            var c2y = gmvex_svg_scan_number(d, pos); pos = c2y.pos;
-            var ex  = gmvex_svg_scan_number(d, pos); pos = ex.pos;
-            var ey  = gmvex_svg_scan_number(d, pos); pos = ey.pos;
+            var c2x = gmvex_svg_scan_number(str, pos); pos = c2x.pos;
+            var c2y = gmvex_svg_scan_number(str, pos); pos = c2y.pos;
+            var ex  = gmvex_svg_scan_number(str, pos); pos = ex.pos;
+            var ey  = gmvex_svg_scan_number(str, pos); pos = ey.pos;
             var abs_c1x, abs_c1y;
             if (!is_undefined(last_cubic_c2x)) {
                 abs_c1x = 2*cur_x - last_cubic_c2x;
@@ -283,10 +297,10 @@ function gmvex_svg_parse_path_data(path, d) {
             last_quad_cx = undefined;
             cur_x = abs_ex; cur_y = abs_ey;
         } else if (cmd == "Q" || cmd == "q") {
-            var cx = gmvex_svg_scan_number(d, pos); pos = cx.pos;
-            var cy = gmvex_svg_scan_number(d, pos); pos = cy.pos;
-            var ex = gmvex_svg_scan_number(d, pos); pos = ex.pos;
-            var ey = gmvex_svg_scan_number(d, pos); pos = ey.pos;
+            var cx = gmvex_svg_scan_number(str, pos); pos = cx.pos;
+            var cy = gmvex_svg_scan_number(str, pos); pos = cy.pos;
+            var ex = gmvex_svg_scan_number(str, pos); pos = ex.pos;
+            var ey = gmvex_svg_scan_number(str, pos); pos = ey.pos;
             var abs_cx, abs_cy, abs_ex, abs_ey;
             if (cmd == "q") {
                 abs_cx = cur_x + cx.value; abs_cy = cur_y + cy.value;
@@ -300,8 +314,8 @@ function gmvex_svg_parse_path_data(path, d) {
             last_cubic_c2x = undefined;
             cur_x = abs_ex; cur_y = abs_ey;
         } else if (cmd == "T" || cmd == "t") {
-            var ex = gmvex_svg_scan_number(d, pos); pos = ex.pos;
-            var ey = gmvex_svg_scan_number(d, pos); pos = ey.pos;
+            var ex = gmvex_svg_scan_number(str, pos); pos = ex.pos;
+            var ey = gmvex_svg_scan_number(str, pos); pos = ey.pos;
             var abs_cx, abs_cy;
             if (!is_undefined(last_quad_cx)) {
                 abs_cx = 2*cur_x - last_quad_cx;
@@ -317,13 +331,13 @@ function gmvex_svg_parse_path_data(path, d) {
             last_cubic_c2x = undefined;
             cur_x = abs_ex; cur_y = abs_ey;
         } else if (cmd == "A" || cmd == "a") {
-            var rx = gmvex_svg_scan_number(d, pos); pos = rx.pos;
-            var ry = gmvex_svg_scan_number(d, pos); pos = ry.pos;
-            var rot = gmvex_svg_scan_number(d, pos); pos = rot.pos;
-            var large_arc = gmvex_svg_scan_flag(d, pos); pos = large_arc.pos;
-            var sweep = gmvex_svg_scan_flag(d, pos); pos = sweep.pos;
-            var ex = gmvex_svg_scan_number(d, pos); pos = ex.pos;
-            var ey = gmvex_svg_scan_number(d, pos); pos = ey.pos;
+            var rx = gmvex_svg_scan_number(str, pos); pos = rx.pos;
+            var ry = gmvex_svg_scan_number(str, pos); pos = ry.pos;
+            var rot = gmvex_svg_scan_number(str, pos); pos = rot.pos;
+            var large_arc = gmvex_svg_scan_flag(str, pos); pos = large_arc.pos;
+            var sweep = gmvex_svg_scan_flag(str, pos); pos = sweep.pos;
+            var ex = gmvex_svg_scan_number(str, pos); pos = ex.pos;
+            var ey = gmvex_svg_scan_number(str, pos); pos = ey.pos;
             var abs_ex, abs_ey;
             if (cmd == "a") { abs_ex = cur_x + ex.value; abs_ey = cur_y + ey.value; }
             else { abs_ex = ex.value; abs_ey = ey.value; }
@@ -338,6 +352,8 @@ function gmvex_svg_parse_path_data(path, d) {
             break;
         }
     }
+
+    buffer_delete(buf);
 }
 
 function gmvex_svg_parse_color(value, default_color) {
@@ -398,18 +414,33 @@ function gmvex_svg_get_attr(attributes, name, default_value, style_map = undefin
     return default_value;
 }
 
-function gmvex_svg_element_to_result(element, default_color, gradient_map = undefined, id_map = undefined, depth = 0) {
+function gmvex_svg_element_to_result(element, default_color, gradient_map = undefined, id_map = undefined, depth = 0, class_map = undefined) {
     if (depth >= 16) {
         show_debug_message("gmvex_svg_import: clip-path/mask nesting exceeded safe depth (16) - likely a circular reference, stopping recursion here.");
         return undefined;
     }
     var tag = element.tag;
     var attrs = element.attributes;
+	
     var path = gmvex_path_create();
     var has_geometry = true;
     var style_map = undefined;
+    if (ds_map_exists(attrs, "class") && !is_undefined(class_map)) {
+        var class_name = string_trim(attrs[? "class"]);
+        if (ds_map_exists(class_map, class_name)) {
+            style_map = class_map[? class_name];
+        }
+    }
     if (ds_map_exists(attrs, "style")) {
-        style_map = gmvex_svg_parse_style_attr(attrs[? "style"]);
+        var inline_style = gmvex_svg_parse_style_attr(attrs[? "style"]);
+        if (is_undefined(style_map)) {
+            style_map = inline_style;
+        } else {
+            var keys = ds_map_keys_to_array(inline_style);
+            for (var k = 0; k < array_length(keys); k++) {
+                style_map[? keys[k]] = inline_style[? keys[k]];
+            }
+        }
     }
 
     if (tag == "path") {
@@ -447,17 +478,20 @@ function gmvex_svg_element_to_result(element, default_color, gradient_map = unde
         gmvex_path_add_line(path, x1, y1, x2, y2);
     } else if (tag == "polyline" || tag == "polygon") {
         var points_str = gmvex_svg_get_attr(attrs, "points", "");
-        var points = [];
-        var pos = 1;
-        var len = string_length(points_str);
-        while (pos <= len) {
-            var nx = gmvex_svg_scan_number(points_str, pos);
-            if (is_undefined(nx.value)) break;
-            var ny = gmvex_svg_scan_number(points_str, nx.pos);
-            if (is_undefined(ny.value)) break;
-            array_push(points, [nx.value, ny.value]);
-            pos = ny.pos;
-        }
+		var points = [];
+		var pts_buf = buffer_create(string_byte_length(points_str) + 1, buffer_fixed, 1);
+		buffer_write(pts_buf, buffer_text, points_str);
+		var pts_str_obj = { buf: pts_buf, size: string_byte_length(points_str) };
+		var pos = 1;
+		while (pos <= pts_str_obj.size) {
+		    var nx = gmvex_svg_scan_number(pts_str_obj, pos);
+		    if (is_undefined(nx.value)) break;
+		    var ny = gmvex_svg_scan_number(pts_str_obj, nx.pos);
+		    if (is_undefined(ny.value)) break;
+		    array_push(points, [nx.value, ny.value]);
+		    pos = ny.pos;
+		}
+		buffer_delete(pts_buf);
         if (tag == "polygon") gmvex_path_add_polygon(path, points);
         else gmvex_path_add_polyline(path, points);
     } else {
@@ -469,13 +503,9 @@ function gmvex_svg_element_to_result(element, default_color, gradient_map = unde
     if (ds_map_exists(attrs, "transform")) {
         var shape_transform_str = attrs[? "transform"];
         var shape_m = gmvex_svg_parse_transform_attr(shape_transform_str);
-        var shape_dec = gmvex_svg_decompose_matrix(shape_m);
-        if (shape_dec.has_shear) {
-            show_debug_message("gmvex_svg_import: transform on <" + tag + "> includes shear - applying translation only. See module header.");
-            gmvex_path_set_transform(path, shape_dec.x, shape_dec.y);
-        } else {
-            gmvex_path_set_transform(path, shape_dec.x, shape_dec.y, shape_dec.rot, shape_dec.xscale, shape_dec.yscale);
-        }
+        path.tox = 0;
+        path.toy = 0;
+        path.tmatrix = shape_m;
     }
 
     var fill_str = gmvex_svg_get_attr(attrs, "fill", "black", style_map);
@@ -523,25 +553,28 @@ function gmvex_svg_element_to_result(element, default_color, gradient_map = unde
     else if (linejoin_str == "bevel") join_mode = gmvex_join.BEVEL;
 
     var dash_array = [];
-    var dash_str = gmvex_svg_get_attr(attrs, "stroke-dasharray", "", style_map);
-    if (dash_str != "" && dash_str != "none") {
-        var pos = 1;
-        var dlen = string_length(dash_str);
-        while (pos <= dlen) {
-            var num = gmvex_svg_scan_number(dash_str, pos);
-            if (is_undefined(num.value)) break;
-            array_push(dash_array, num.value);
-            pos = num.pos;
-        }
-    }
+	var dash_str = gmvex_svg_get_attr(attrs, "stroke-dasharray", "", style_map);
+	if (dash_str != "" && dash_str != "none") {
+	    var dash_buf = buffer_create(string_byte_length(dash_str) + 1, buffer_fixed, 1);
+	    buffer_write(dash_buf, buffer_text, dash_str);
+	    var dash_str_obj = { buf: dash_buf, size: string_byte_length(dash_str) };
+	    var pos = 1;
+	    while (pos <= dash_str_obj.size) {
+	        var num = gmvex_svg_scan_number(dash_str_obj, pos);
+	        if (is_undefined(num.value)) break;
+	        array_push(dash_array, num.value);
+	        pos = num.pos;
+	    }
+	    buffer_delete(dash_buf);
+	}
     var dash_offset = real(gmvex_svg_get_attr(attrs, "stroke-dashoffset", "0", style_map));
 
     if (ds_map_exists(attrs, "clip-path") && !is_undefined(id_map)) {
-        path = gmvex_svg_resolve_clip_path(path, attrs[? "clip-path"], id_map, default_color, gradient_map, depth + 1);
+        path = gmvex_svg_resolve_clip_path(path, attrs[? "clip-path"], id_map, default_color, gradient_map, depth + 1, class_map);
     }
 
     if (ds_map_exists(attrs, "mask") && !is_undefined(id_map)) {
-        gmvex_svg_resolve_mask(path, attrs[? "mask"], id_map, default_color, gradient_map, depth + 1);
+        gmvex_svg_resolve_mask(path, attrs[? "mask"], id_map, default_color, gradient_map, depth + 1, class_map);
     }
 
     return {
@@ -567,40 +600,37 @@ function gmvex_svg_walk_element(element, results, default_color) {
     gmvex_svg_collect_gradients(element, gradient_map);
     var id_map = ds_map_create();
     gmvex_svg_collect_ids(element, id_map);
+    var class_map = ds_map_create();
+    gmvex_svg_collect_css_classes(element, class_map);
 
-    gmvex_svg_walk_element_inner(element, results, default_color, gradient_map, id_map);
+    gmvex_svg_walk_element_inner(element, results, default_color, gradient_map, id_map, class_map);
 
     ds_map_destroy(gradient_map);
     ds_map_destroy(id_map);
+    ds_map_destroy(class_map);
 }
 
-function gmvex_svg_walk_element_inner(element, results, default_color, gradient_map, id_map) {
+function gmvex_svg_walk_element_inner(element, results, default_color, gradient_map, id_map, class_map) {
     if (element.tag == "g" || element.tag == "svg") {
         for (var i = 0; i < array_length(element.children); i++) {
-            gmvex_svg_walk_element_inner(element.children[i], results, default_color, gradient_map, id_map);
+            gmvex_svg_walk_element_inner(element.children[i], results, default_color, gradient_map, id_map, class_map);
         }
         return;
     }
-    var result = gmvex_svg_element_to_result(element, default_color, gradient_map, id_map);
+    var result = gmvex_svg_element_to_result(element, default_color, gradient_map, id_map, 0, class_map);
     if (!is_undefined(result)) array_push(results, result);
 }
 
-function gmvex_svg_walk_collect(element, group, results, default_color, gradient_map = undefined, id_map = undefined, font_map = undefined, default_font = undefined) {
+function gmvex_svg_walk_collect(element, group, results, default_color, gradient_map = undefined, id_map = undefined, font_map = undefined, default_font = undefined, class_map = undefined) {
     if (element.tag == "g" || element.tag == "svg") {
         if (ds_map_exists(element.attributes, "transform")) {
             var m = gmvex_svg_parse_transform_attr(element.attributes[? "transform"]);
-            var dec = gmvex_svg_decompose_matrix(m);
-            if (dec.has_shear) {
-                show_debug_message("gmvex_svg_import: transform on <" + element.tag + "> includes shear - applying translation only. See module header.");
-                gmvex_group_set_transform(group, dec.x, dec.y);
-            } else {
-                gmvex_group_set_transform(group, dec.x, dec.y, dec.rot, dec.xscale, dec.yscale);
-            }
+            group.gtmatrix = m;
         }
         for (var i = 0; i < array_length(element.children); i++) {
             var child = element.children[i];
             if (child.tag == "use" && !is_undefined(id_map)) {
-                gmvex_svg_resolve_use(child, group, results, default_color, gradient_map, id_map, 0);
+                gmvex_svg_resolve_use(child, group, results, default_color, gradient_map, id_map, 0, class_map);
             } else if (child.tag == "text") {
                 var text_results = gmvex_svg_resolve_text(child, default_color, font_map, default_font);
                 for (var j = 0; j < array_length(text_results); j++) {
@@ -610,9 +640,9 @@ function gmvex_svg_walk_collect(element, group, results, default_color, gradient
             } else if (child.tag == "g") {
                 var child_group = gmvex_group_create();
                 gmvex_group_add_group(group, child_group);
-                gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map, font_map, default_font);
+                gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map, font_map, default_font, class_map);
             } else {
-                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map);
+                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map, 0, class_map);
                 if (!is_undefined(result)) {
                     gmvex_group_add_path(group, result.path);
                     array_push(results, result);
@@ -648,10 +678,13 @@ function gmvex_svg_import(filename, default_color = c_black, font_map = undefine
     var id_map = ds_map_create();
     gmvex_svg_collect_ids(root, id_map);
 
+    var class_map = ds_map_create();
+    gmvex_svg_collect_css_classes(root, class_map);
+
     var results = [];
     var root_group = gmvex_group_create();
 
-    gmvex_svg_walk_collect(root, root_group, results, default_color, gradient_map, id_map, font_map, default_font);
+    gmvex_svg_walk_collect(root, root_group, results, default_color, gradient_map, id_map, font_map, default_font, class_map);
     gmvex_group_resolve_transforms(root_group);
 
     var doc_width = undefined;
@@ -664,21 +697,24 @@ function gmvex_svg_import(filename, default_color = c_black, font_map = undefine
         doc_height = gmvex_svg_parse_length(root.attributes[? "height"]);
     }
     if ((is_undefined(doc_width) || is_undefined(doc_height)) && ds_map_exists(root.attributes, "viewBox")) {
-        var viewbox_str = root.attributes[? "viewBox"];
-        var vb_parts = [];
-        var pos = 1;
-        var vlen = string_length(viewbox_str);
-        while (pos <= vlen) {
-            var num = gmvex_svg_scan_number(viewbox_str, pos);
-            if (is_undefined(num.value)) break;
-            array_push(vb_parts, num.value);
-            pos = num.pos;
-        }
-        if (array_length(vb_parts) >= 4) {
-            if (is_undefined(doc_width)) doc_width = vb_parts[2];
-            if (is_undefined(doc_height)) doc_height = vb_parts[3];
-        }
-    }
+	    var viewbox_str = root.attributes[? "viewBox"];
+	    var vb_parts = [];
+	    var vb_buf = buffer_create(string_byte_length(viewbox_str) + 1, buffer_fixed, 1);
+	    buffer_write(vb_buf, buffer_text, viewbox_str);
+	    var vb_str_obj = { buf: vb_buf, size: string_byte_length(viewbox_str) };
+	    var pos = 1;
+	    while (pos <= vb_str_obj.size) {
+	        var num = gmvex_svg_scan_number(vb_str_obj, pos);
+	        if (is_undefined(num.value)) break;
+	        array_push(vb_parts, num.value);
+	        pos = num.pos;
+	    }
+	    buffer_delete(vb_buf);
+	    if (array_length(vb_parts) >= 4) {
+	        if (is_undefined(doc_width)) doc_width = vb_parts[2];
+	        if (is_undefined(doc_height)) doc_height = vb_parts[3];
+	    }
+	}
 
     return { group: root_group, results: results, doc_width: doc_width, doc_height: doc_height };
 }
@@ -701,17 +737,16 @@ function gmvex_svg_matrix_identity() {
 }
 
 function gmvex_svg_parse_transform_function(str, pos) {
-    var len = string_length(str);
+    var buf = str.buf, size = str.size;
     var name_start = pos;
-    while (pos <= len && string_char_at(str, pos) != "(") pos++;
-    if (pos > len) return { matrix: undefined, pos: name_start };
-    var name = string_trim(string_copy(str, name_start, pos - name_start));
+    while (pos <= size && gmvex_buf_char_at(buf, size, pos) != "(") pos++;
+    if (pos > size) return { matrix: undefined, pos: name_start };
+    var name = string_trim(gmvex_buf_copy(buf, size, name_start, pos - name_start));
     pos++; // skip '('
 
-    var args = [];
     var arg_start = pos;
-    while (pos <= len && string_char_at(str, pos) != ")") pos++;
-    var args_str = string_copy(str, arg_start, pos - arg_start);
+    while (pos <= size && gmvex_buf_char_at(buf, size, pos) != ")") pos++;
+    var args_str = gmvex_buf_copy(buf, size, arg_start, pos - arg_start);
     pos++; // skip ')'
 
     var parts = [];
@@ -762,16 +797,19 @@ function gmvex_svg_parse_transform_function(str, pos) {
 
 function gmvex_svg_parse_transform_attr(value) {
     var result = gmvex_svg_matrix_identity();
+    var buf = buffer_create(string_byte_length(value) + 1, buffer_fixed, 1);
+    buffer_write(buf, buffer_text, value);
+    var str_obj = { buf: buf, size: string_byte_length(value) };
     var pos = 1;
-    var len = string_length(value);
-    while (pos <= len) {
-        pos = gmvex_svg_skip_whitespace(value, pos);
-        if (pos > len) break;
-        var parsed = gmvex_svg_parse_transform_function(value, pos);
+    while (pos <= str_obj.size) {
+        pos = gmvex_svg_skip_whitespace(str_obj, pos);
+        if (pos > str_obj.size) break;
+        var parsed = gmvex_svg_parse_transform_function(str_obj, pos);
         if (is_undefined(parsed.matrix)) break;
         result = gmvex_svg_matrix_multiply(result, parsed.matrix);
         pos = parsed.pos;
     }
+    buffer_delete(buf);
     return result;
 }
 
@@ -795,35 +833,32 @@ function gmvex_svg_walk_element_grouped(element, default_color) {
     gmvex_svg_collect_gradients(element, gradient_map);
     var id_map = ds_map_create();
     gmvex_svg_collect_ids(element, id_map);
+    var class_map = ds_map_create();
+    gmvex_svg_collect_css_classes(element, class_map);
 
-    var result = gmvex_svg_walk_element_grouped_inner(element, default_color, gradient_map, id_map);
+    var result = gmvex_svg_walk_element_grouped_inner(element, default_color, gradient_map, id_map, class_map);
 
     ds_map_destroy(gradient_map);
     ds_map_destroy(id_map);
+    ds_map_destroy(class_map);
     return result;
 }
 
-function gmvex_svg_walk_element_grouped_inner(element, default_color, gradient_map, id_map) {
+function gmvex_svg_walk_element_grouped_inner(element, default_color, gradient_map, id_map, class_map) {
     if (element.tag == "g" || element.tag == "svg") {
         var group = gmvex_group_create();
         if (ds_map_exists(element.attributes, "transform")) {
             var transform_str = element.attributes[? "transform"];
             var m = gmvex_svg_parse_transform_attr(transform_str);
-            var decomposed = gmvex_svg_decompose_matrix(m);
-            if (decomposed.has_shear) {
-                show_debug_message("gmvex_svg_import: transform on <" + element.tag + "> includes shear - applying translation only. See gmvex_svg module header.");
-                gmvex_group_set_transform(group, decomposed.x, decomposed.y);
-            } else {
-                gmvex_group_set_transform(group, decomposed.x, decomposed.y, decomposed.rot, decomposed.xscale, decomposed.yscale);
-            }
+            group.gtmatrix = m;
         }
         for (var i = 0; i < array_length(element.children); i++) {
             var child = element.children[i];
             if (child.tag == "g" || child.tag == "svg") {
-                var child_group = gmvex_svg_walk_element_grouped_inner(child, default_color, gradient_map, id_map);
+                var child_group = gmvex_svg_walk_element_grouped_inner(child, default_color, gradient_map, id_map, class_map);
                 gmvex_group_add_group(group, child_group);
             } else {
-                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map);
+                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map, 0, class_map);
                 if (!is_undefined(result)) gmvex_group_add_path(group, result.path);
             }
         }
@@ -897,6 +932,11 @@ function gmvex_svg_collect_gradients(element, gradient_map) {
                 array_push(stops, [offset, color_result.color, stop_opacity]);
             }
 
+            var grad_transform = gmvex_svg_matrix_identity();
+            if (ds_map_exists(attrs, "gradientTransform")) {
+                grad_transform = gmvex_svg_parse_transform_attr(attrs[? "gradientTransform"]);
+            }
+
             gradient_map[? attrs[? "id"]] = {
                 type: (element.tag == "linearGradient") ? gmvex_gradient.LINEAR : gmvex_gradient.RADIAL,
                 x1: real(gmvex_svg_get_attr(attrs, "x1", "0")),
@@ -907,6 +947,7 @@ function gmvex_svg_collect_gradients(element, gradient_map) {
                 cy: real(gmvex_svg_get_attr(attrs, "cy", "0.5")),
                 r: real(gmvex_svg_get_attr(attrs, "r", "0.5")),
                 units: gmvex_svg_get_attr(attrs, "gradientUnits", "objectBoundingBox"),
+                transform: grad_transform,
                 stops: stops
             };
         }
@@ -931,7 +972,9 @@ function gmvex_svg_compute_gradient_coords(path, gradient) {
             p0x = bbox[0] + gradient.x1 * bw; p0y = bbox[1] + gradient.y1 * bh;
             p1x = bbox[0] + gradient.x2 * bw; p1y = bbox[1] + gradient.y2 * bh;
         }
-        return { p0x: p0x, p0y: p0y, p1x: p1x, p1y: p1y };
+        var t0 = gmvex_svg_matrix_apply_point(gradient.transform, p0x, p0y);
+        var t1 = gmvex_svg_matrix_apply_point(gradient.transform, p1x, p1y);
+        return { p0x: t0.x, p0y: t0.y, p1x: t1.x, p1y: t1.y };
     } else {
         var rcx, rcy, rr;
         if (gradient.units == "userSpaceOnUse") {
@@ -940,7 +983,8 @@ function gmvex_svg_compute_gradient_coords(path, gradient) {
             rcx = bbox[0] + gradient.cx * bw; rcy = bbox[1] + gradient.cy * bh;
             rr = gradient.r * max(bw, bh);
         }
-        return { p0x: rcx, p0y: rcy, p1x: rr, p1y: 0 };
+        var tc = gmvex_svg_matrix_apply_point(gradient.transform, rcx, rcy);
+        return { p0x: tc.x, p0y: tc.y, p1x: rr, p1y: 0 };
     }
 }
 
@@ -978,7 +1022,7 @@ function gmvex_svg_collect_ids(element, id_map) {
     }
 }
 
-function gmvex_svg_resolve_use(element, group, results, default_color, gradient_map, id_map, depth) {
+function gmvex_svg_resolve_use(element, group, results, default_color, gradient_map, id_map, depth, class_map) {
     if (depth >= 16) {
         show_debug_message("gmvex_svg_import: <use> nesting exceeded safe depth (16) - likely a circular reference, stopping recursion here.");
         return;
@@ -1005,26 +1049,20 @@ function gmvex_svg_resolve_use(element, group, results, default_color, gradient_
 
     var use_group = gmvex_group_create();
     var m = gmvex_svg_parse_transform_attr(combined_transform_str);
-    var dec = gmvex_svg_decompose_matrix(m);
-    if (dec.has_shear) {
-        show_debug_message("gmvex_svg_import: <use> transform includes shear - applying translation only.");
-        gmvex_group_set_transform(use_group, dec.x, dec.y);
-    } else {
-        gmvex_group_set_transform(use_group, dec.x, dec.y, dec.rot, dec.xscale, dec.yscale);
-    }
+    use_group.gtmatrix = m;
     gmvex_group_add_group(group, use_group);
 
     if (referenced.tag == "g" || referenced.tag == "symbol" || referenced.tag == "svg") {
         for (var i = 0; i < array_length(referenced.children); i++) {
             var child = referenced.children[i];
             if (child.tag == "use") {
-                gmvex_svg_resolve_use(child, use_group, results, default_color, gradient_map, id_map, depth + 1);
+                gmvex_svg_resolve_use(child, use_group, results, default_color, gradient_map, id_map, depth + 1, class_map);
             } else if (child.tag == "g") {
                 var child_group = gmvex_group_create();
                 gmvex_group_add_group(use_group, child_group);
-                gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map);
+                gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map, undefined, undefined, class_map);
             } else {
-                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map);
+                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map, 0, class_map);
                 if (!is_undefined(result)) {
                     gmvex_group_add_path(use_group, result.path);
                     array_push(results, result);
@@ -1039,7 +1077,7 @@ function gmvex_svg_resolve_use(element, group, results, default_color, gradient_
             }
         }
     } else {
-        var result = gmvex_svg_element_to_result(referenced, default_color, gradient_map, id_map);
+        var result = gmvex_svg_element_to_result(referenced, default_color, gradient_map, id_map, 0, class_map);
         if (!is_undefined(result)) {
             gmvex_group_add_path(use_group, result.path);
             array_push(results, result);
@@ -1116,7 +1154,7 @@ function gmvex_svg_extract_url_id(value) {
     return string_copy(value, id_start, id_end - id_start);
 }
 
-function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default_color, gradient_map, depth = 0) {
+function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default_color, gradient_map, depth = 0, class_map = undefined) {
     var clip_id = gmvex_svg_extract_url_id(clip_path_str);
     if (clip_id == "" || !ds_map_exists(id_map, clip_id)) return target_path;
 
@@ -1137,7 +1175,7 @@ function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default
     var winding_counts = [0, 0];
     var n = array_length(clip_element.children);
     for (var i = 0; i < n; i++) {
-        var child_result = gmvex_svg_element_to_result(clip_element.children[i], default_color, gradient_map, id_map, depth);
+        var child_result = gmvex_svg_element_to_result(clip_element.children[i], default_color, gradient_map, id_map, depth, class_map);
         if (is_undefined(child_result)) continue;
         var cp = child_result.path;
         winding_counts[cp.winding] += 1;
@@ -1168,7 +1206,7 @@ function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default
     return clipped_path;
 }
 
-function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gradient_map, depth = 0) {
+function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gradient_map, depth = 0, class_map = undefined) {
     var mask_id = gmvex_svg_extract_url_id(mask_str);
     if (mask_id == "" || !ds_map_exists(id_map, mask_id)) return;
 
@@ -1189,7 +1227,7 @@ function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gr
     var winding_counts = [0, 0];
     var n = array_length(mask_element.children);
     for (var i = 0; i < n; i++) {
-        var child_result = gmvex_svg_element_to_result(mask_element.children[i], default_color, gradient_map, id_map, depth);
+        var child_result = gmvex_svg_element_to_result(mask_element.children[i], default_color, gradient_map, id_map, depth, class_map);
         if (is_undefined(child_result)) continue;
         var cp = child_result.path;
         winding_counts[cp.winding] += 1;
@@ -1249,4 +1287,57 @@ function gmvex_svg_shift_flat_subpaths(path, dx, dy) {
     }
     path.bbox[0] += dx; path.bbox[2] += dx;
     path.bbox[1] += dy; path.bbox[3] += dy;
+}
+
+function gmvex_svg_matrix_apply_point(m, x, y) {
+    return {
+        x: m[0]*x + m[2]*y + m[4],
+        y: m[1]*x + m[3]*y + m[5]
+    };
+}
+
+function gmvex_svg_parse_css_classes(css_text, class_map) {
+    var len = string_length(css_text);
+    var pos = 1;
+    while (pos <= len) {
+        var dot_pos = string_pos_ext(".", css_text, pos);
+        if (dot_pos == 0) break;
+
+        var name_start = dot_pos + 1;
+        var brace_pos = string_pos_ext("{", css_text, name_start);
+        if (brace_pos == 0) break;
+
+        var selector = string_trim(string_copy(css_text, name_start, brace_pos - name_start));
+        if (string_pos(" ", selector) != 0 || string_pos(",", selector) != 0 || selector == "") {
+            pos = brace_pos + 1;
+            continue;
+        }
+
+        var close_brace = string_pos_ext("}", css_text, brace_pos);
+        if (close_brace == 0) break;
+
+        var body = string_copy(css_text, brace_pos + 1, close_brace - brace_pos - 1);
+        var props = gmvex_svg_parse_style_attr(body);
+
+        if (!ds_map_exists(class_map, selector)) {
+            class_map[? selector] = props;
+        } else {
+            var existing = class_map[? selector];
+            var keys = ds_map_keys_to_array(props);
+            for (var k = 0; k < array_length(keys); k++) {
+                existing[? keys[k]] = props[? keys[k]];
+            }
+        }
+
+        pos = close_brace + 1;
+    }
+}
+
+function gmvex_svg_collect_css_classes(element, class_map) {
+    if (element.tag == "style") {
+        gmvex_svg_parse_css_classes(element.text_content, class_map);
+    }
+    for (var i = 0; i < array_length(element.children); i++) {
+        gmvex_svg_collect_css_classes(element.children[i], class_map);
+    }
 }

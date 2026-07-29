@@ -87,15 +87,11 @@ function gmvex_fill_draw_gradient_masked(path, grad_type, p0x, p0y, p1x, p1y, st
     var bbox = path.bbox;
     var w = ceil(max(bbox[2]-bbox[0], 1)), h = ceil(max(bbox[3]-bbox[1], 1));
 
-    if (!variable_struct_exists(path, "gradmask_orig_tx")) {
-        path.gradmask_orig_tx = variable_struct_exists(path,"tx") ? path.tx : 0;
-        path.gradmask_orig_ty = variable_struct_exists(path,"ty") ? path.ty : 0;
-        path.gradmask_orig_trot = variable_struct_exists(path,"trot") ? path.trot : 0;
-        path.gradmask_orig_txscale = variable_struct_exists(path,"txscale") ? path.txscale : 1;
-        path.gradmask_orig_tyscale = variable_struct_exists(path,"tyscale") ? path.tyscale : 1;
-        path.gradmask_orig_tox = variable_struct_exists(path,"tox") ? path.tox : 0;
-        path.gradmask_orig_toy = variable_struct_exists(path,"toy") ? path.toy : 0;
+    if (!variable_struct_exists(path, "gradmask_orig_tmatrix")) {
+        path.gradmask_orig_tmatrix = variable_struct_exists(path,"tmatrix") ? path.tmatrix : [1, 0, 0, 1, 0, 0];
     }
+    var grad_orig_m = path.gradmask_orig_tmatrix;
+
     if (!variable_struct_exists(path,"gradmask_surf") || !surface_exists(path.gradmask_surf) || path.gradmask_surf_w != w || path.gradmask_surf_h != h) {
         if (variable_struct_exists(path,"gradmask_surf") && surface_exists(path.gradmask_surf)) surface_free(path.gradmask_surf);
         path.gradmask_surf = surface_create(w, h); path.gradmask_surf_w = w; path.gradmask_surf_h = h;
@@ -103,13 +99,12 @@ function gmvex_fill_draw_gradient_masked(path, grad_type, p0x, p0y, p1x, p1y, st
 
     surface_set_target(path.gradmask_surf);
     draw_clear_alpha(c_black, 0);
-    gmvex_path_set_transform(path, -bbox[0], -bbox[1], path.gradmask_orig_trot, path.gradmask_orig_txscale, path.gradmask_orig_tyscale, path.gradmask_orig_tox, path.gradmask_orig_toy);
+    path.tmatrix = [grad_orig_m[0], grad_orig_m[1], grad_orig_m[2], grad_orig_m[3], -bbox[0], -bbox[1]];
     gmvex_fill_draw_gradient(path, grad_type, p0x, p0y, p1x, p1y, stops);
     surface_reset_target();
-    gmvex_path_set_transform(path, path.gradmask_orig_tx, path.gradmask_orig_ty, path.gradmask_orig_trot, path.gradmask_orig_txscale, path.gradmask_orig_tyscale, path.gradmask_orig_tox, path.gradmask_orig_toy);
+    path.tmatrix = grad_orig_m;
 
     if (path.vbuff == -1 && path.vbuff_cw == -1) return;
-
     var mat = gmvex_path_get_matrix(path);
     var prev_mat = matrix_get(matrix_world);
     matrix_set(matrix_world, mat);

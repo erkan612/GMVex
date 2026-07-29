@@ -89,19 +89,22 @@ function gmvex_winding_number_contribution(px, py, pts) {
 }
 
 function gmvex_transform_point_inverse(path, wx, wy) {
-    if (!variable_struct_exists(path, "tx")) return [wx, wy];
+    if (!variable_struct_exists(path, "tmatrix")) return [wx, wy];
+    var m = path.tmatrix;
 
-    var dx = wx - path.tx;
-    var dy = wy - path.ty;
+    var det = m[0]*m[3] - m[1]*m[2];
+    if (det == 0) return [wx, wy];
 
-    var rad = -degtorad(path.trot);
-    var rx = dx * cos(rad) - dy * sin(rad);
-    var ry = dx * sin(rad) + dy * cos(rad);
+    var dx = wx - m[4];
+    var dy = wy - m[5];
 
-    var sx = (path.txscale != 0) ? rx / path.txscale : rx;
-    var sy = (path.tyscale != 0) ? ry / path.tyscale : ry;
+    var lx = (m[3]*dx - m[1]*dy) / det;
+    var ly = (-m[2]*dx + m[0]*dy) / det;
 
-    return [sx + path.tox, sy + path.toy];
+    var tox = variable_struct_exists(path, "tox") ? path.tox : 0;
+    var toy = variable_struct_exists(path, "toy") ? path.toy : 0;
+
+    return [lx + tox, ly + toy];
 }
 
 function gmvex_point_segment_distance(px, py, x0, y0, x1, y1) {

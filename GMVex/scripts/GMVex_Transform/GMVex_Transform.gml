@@ -1,28 +1,26 @@
 function gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0) {
-    path.tx = x;
-    path.ty = y;
-    path.trot = rot;
-    path.txscale = xscale;
-    path.tyscale = yscale;
     path.tox = origin_x;
     path.toy = origin_y;
+
+    var srt_matrix = matrix_build(x, y, 0, 0, 0, rot, xscale, yscale, 1);
+    var full_matrix = srt_matrix;
+    if (origin_x != 0 || origin_y != 0) {
+        var pivot_matrix = matrix_build(-origin_x, -origin_y, 0, 0, 0, 0, 1, 1, 1);
+        full_matrix = matrix_multiply(pivot_matrix, srt_matrix);
+    }
+
+    path.tmatrix = [full_matrix[0], full_matrix[4], full_matrix[1], full_matrix[5], full_matrix[12], full_matrix[13]];
 }
 
 function gmvex_path_get_matrix(path) {
-    if (!variable_struct_exists(path, "tx")) return matrix_build_identity();
-
-    var m = matrix_build(
-        path.tx, path.ty, 0,
-        0, 0, path.trot,
-        path.txscale, path.tyscale, 1
-    );
-
-    if (path.tox != 0 || path.toy != 0) {
-        var pivot = matrix_build(-path.tox, -path.toy, 0, 0,0,0, 1,1,1);
-        m = matrix_multiply(pivot, m);
-    }
-
-    return m;
+    if (!variable_struct_exists(path, "tmatrix")) return matrix_build_identity();
+    var m = path.tmatrix;
+    return [
+        m[0], m[2], 0, 0,
+        m[1], m[3], 0, 0,
+        0,    0,    1, 0,
+        m[4], m[5], 0, 1
+    ];
 }
 
 function gmvex_apply_transform_offset_command(cmd, dx, dy) {
@@ -97,18 +95,14 @@ function gmvex_apply_transform_walk(path, offset_fn, scale_fn, rotate_fn) {
 }
 
 function gmvex_path_apply_position(path) {
-    if (!variable_struct_exists(path, "tx")) return;
+    if (!variable_struct_exists(path, "tmatrix")) return;
+    var m = path.tmatrix;
+    if (m[4] == 0 && m[5] == 0) return;
 
-    var trot = variable_struct_exists(path, "trot") ? path.trot : 0;
-    var txscale = variable_struct_exists(path, "txscale") ? path.txscale : 1;
-    var tyscale = variable_struct_exists(path, "tyscale") ? path.tyscale : 1;
-
-    var rad = degtorad(-trot);
-    var cs = cos(rad), sn = sin(rad);
-    var undo_rot_x = path.tx*cs - path.ty*sn;
-    var undo_rot_y = path.tx*sn + path.ty*cs;
-    var dx = (txscale != 0) ? undo_rot_x / txscale : 0;
-    var dy = (tyscale != 0) ? undo_rot_y / tyscale : 0;
+    var det = m[0]*m[3] - m[1]*m[2];
+    if (det == 0) return;
+    var dx = (m[3]*m[4] - m[1]*m[5]) / det;
+    var dy = (m[0]*m[5] - m[2]*m[4]) / det;
 
     for (var s = 0; s < array_length(path.subpaths); s++) {
         var sp = path.subpaths[s];
@@ -123,23 +117,24 @@ function gmvex_path_apply_position(path) {
         }
     }
 
-    path.tx = 0;
-    path.ty = 0;
+    path.tmatrix = [m[0], m[1], m[2], m[3], 0, 0];
     path.dirty = true;
     if (variable_struct_exists(path, "stroke_vbuff")) path.stroke_dash_dirty = true;
 }
 
 function gmvex_path_apply_rotation(path) {
-    if (!variable_struct_exists(path, "trot") || path.trot == 0) return;
+    if (!variable_struct_exists(path, "tmatrix")) return;
+    var m = path.tmatrix;
+    var rot = radtodeg(arctan2(m[1], m[0]));
+    if (rot == 0) return;
 
-    var trot = path.trot;
     for (var s = 0; s < array_length(path.subpaths); s++) {
         var sp = path.subpaths[s];
         for (var c = 0; c < array_length(sp.commands); c++) {
-            gmvex_apply_transform_rotate_command(sp.commands[c], trot);
+            gmvex_apply_transform_rotate_command(sp.commands[c], -rot);
         }
         if (variable_struct_exists(sp, "splinepts")) {
-            var rad = degtorad(trot);
+            var rad = degtorad(-rot);
             var cs = cos(rad), sn = sin(rad);
             for (var p = 0; p < array_length(sp.splinepts); p++) {
                 var px = sp.splinepts[p][0], py = sp.splinepts[p][1];
@@ -149,32 +144,68 @@ function gmvex_path_apply_rotation(path) {
         }
     }
 
-    path.trot = 0;
+    var scale_h = sqrt(m[0]*m[0] + m[1]*m[1]);
+    var scale_v = sqrt(m[2]*m[2] + m[3]*m[3]);
+    path.tmatrix = [scale_h, 0, 0, scale_v, m[4], m[5]];
     path.dirty = true;
     if (variable_struct_exists(path, "stroke_vbuff")) path.stroke_dash_dirty = true;
 }
 
+function gmvex_apply_transform_sandwich_scale_command(cmd, sandwich_xx, sandwich_xy, sandwich_yx, sandwich_yy) {
+    if (cmd.type == gmvex_cmd.MOVETO || cmd.type == gmvex_cmd.LINETO) {
+        var nx = sandwich_xx*cmd.x + sandwich_xy*cmd.y;
+        var ny = sandwich_yx*cmd.x + sandwich_yy*cmd.y;
+        cmd.x = nx; cmd.y = ny;
+    } else if (cmd.type == gmvex_cmd.QUADTO) {
+        var ncx = sandwich_xx*cmd.cx + sandwich_xy*cmd.cy;
+        var ncy = sandwich_yx*cmd.cx + sandwich_yy*cmd.cy;
+        var nx = sandwich_xx*cmd.x + sandwich_xy*cmd.y;
+        var ny = sandwich_yx*cmd.x + sandwich_yy*cmd.y;
+        cmd.cx = ncx; cmd.cy = ncy;
+        cmd.x = nx; cmd.y = ny;
+    } else if (cmd.type == gmvex_cmd.CUBICTO) {
+        var nc1x = sandwich_xx*cmd.c1x + sandwich_xy*cmd.c1y;
+        var nc1y = sandwich_yx*cmd.c1x + sandwich_yy*cmd.c1y;
+        var nc2x = sandwich_xx*cmd.c2x + sandwich_xy*cmd.c2y;
+        var nc2y = sandwich_yx*cmd.c2x + sandwich_yy*cmd.c2y;
+        var nx = sandwich_xx*cmd.x + sandwich_xy*cmd.y;
+        var ny = sandwich_yx*cmd.x + sandwich_yy*cmd.y;
+        cmd.c1x = nc1x; cmd.c1y = nc1y;
+        cmd.c2x = nc2x; cmd.c2y = nc2y;
+        cmd.x = nx; cmd.y = ny;
+    }
+}
+
 function gmvex_path_apply_scale(path) {
-    if (!variable_struct_exists(path, "txscale")) return;
-    var sx = path.txscale;
-    var sy = variable_struct_exists(path, "tyscale") ? path.tyscale : 1;
-    if (sx == 1 && sy == 1) return;
+    if (!variable_struct_exists(path, "tmatrix")) return;
+    var m = path.tmatrix;
+    var scale_h = sqrt(m[0]*m[0] + m[1]*m[1]);
+    var scale_v = sqrt(m[2]*m[2] + m[3]*m[3]);
+    if (scale_h == 1 && scale_v == 1) return;
+
+    var rot = radtodeg(arctan2(m[1], m[0]));
+    var rad = degtorad(rot);
+    var cs = cos(rad), sn = sin(rad);
+    var sandwich_xx = scale_h*cs*cs + scale_v*sn*sn;
+    var sandwich_xy = (scale_h - scale_v)*sn*cs;
+    var sandwich_yx = (scale_h - scale_v)*sn*cs;
+    var sandwich_yy = scale_h*sn*sn + scale_v*cs*cs;
 
     for (var s = 0; s < array_length(path.subpaths); s++) {
         var sp = path.subpaths[s];
         for (var c = 0; c < array_length(sp.commands); c++) {
-            gmvex_apply_transform_scale_command(sp.commands[c], sx, sy);
+            gmvex_apply_transform_sandwich_scale_command(sp.commands[c], sandwich_xx, sandwich_xy, sandwich_yx, sandwich_yy);
         }
         if (variable_struct_exists(sp, "splinepts")) {
             for (var p = 0; p < array_length(sp.splinepts); p++) {
-                sp.splinepts[p][0] *= sx;
-                sp.splinepts[p][1] *= sy;
+                var px = sp.splinepts[p][0], py = sp.splinepts[p][1];
+                sp.splinepts[p][0] = sandwich_xx*px + sandwich_xy*py;
+                sp.splinepts[p][1] = sandwich_yx*px + sandwich_yy*py;
             }
         }
     }
 
-    path.txscale = 1;
-    path.tyscale = 1;
+    path.tmatrix = [cs, sn, -sn, cs, m[4], m[5]];
     path.dirty = true;
     if (variable_struct_exists(path, "stroke_vbuff")) path.stroke_dash_dirty = true;
 }
