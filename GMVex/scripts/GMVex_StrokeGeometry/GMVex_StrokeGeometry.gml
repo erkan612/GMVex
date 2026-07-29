@@ -53,7 +53,7 @@ function gmvex_round_fan(vb, cx, cy, x0, y0, x1, y1, radius, col, alpha, u_join,
     var a1 = point_direction(cx, cy, x1, y1);
 
     var diff = angle_difference(a1, a0);
-    var steps = max(1, ceil(abs(diff) / 15)); // 15 does seem to work fine for now
+    var steps = gmvex_round_step_count(radius, diff);
 
     var prev_x = x0, prev_y = y0;
     for (var i = 1; i <= steps; i++) {
@@ -99,7 +99,7 @@ function gmvex_draw_cap(vb, endpoint, dirx, diry, hw, col, alpha, cap_mode, u_va
             diff = diff_alt;
         }
 
-        var steps = max(1, ceil(abs(diff) / 15));
+        var steps = gmvex_round_step_count(hw, diff);
         var prev_x = ax, prev_y = ay;
         for (var i = 1; i <= steps; i++) {
             var t = i / steps;
@@ -114,4 +114,16 @@ function gmvex_draw_cap(vb, endpoint, dirx, diry, hw, col, alpha, cap_mode, u_va
             prev_x = nx; prev_y = ny;
         }
     }
+}
+
+function gmvex_round_step_count(radius, angle_diff_degrees) {
+    var tol = global.gmvex_tolerance;
+    var step_deg;
+    if (radius <= tol) {
+        step_deg = 360;
+    } else {
+        var cos_half = clamp(1 - (tol / radius), -1, 1);
+        step_deg = max(2 * radtodeg(arccos(cos_half)), 1);
+    }
+    return max(1, ceil(abs(angle_diff_degrees) / step_deg));
 }

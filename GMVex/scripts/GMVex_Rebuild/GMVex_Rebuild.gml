@@ -157,10 +157,11 @@ function gmvex_path_rebuild(path) {
         vb_cw = -1;
     }
 
-    path.vbuff    = vb_ccw;
-    path.vbuff_cw = vb_cw;
-    path.bbox     = [minx, miny, maxx, maxy];
-    path.dirty    = false;
+    path.vbuff				= vb_ccw;
+    path.vbuff_cw			= vb_cw;
+    path.bbox				= [minx, miny, maxx, maxy];
+	path.rebuilt_tolerance  = global.gmvex_tolerance;
+    path.dirty				= false;
 }
 
 function gmvex_cubic_flatness(x0,y0,x1,y1,x2,y2,x3,y3) {
@@ -207,5 +208,11 @@ function gmvex_flatten_cubic_eased(x0,y0,x1,y1,x2,y2,x3,y3, easing_fn, out_pts) 
         var px = mt*mt*mt*x0 + 3*mt*mt*t*x1 + 3*mt*t*t*x2 + t*t*t*x3;
         var py = mt*mt*mt*y0 + 3*mt*mt*t*y1 + 3*mt*t*t*y2 + t*t*t*y3;
         array_push(out_pts, [px, py]);
+    }
+}
+
+function gmvex_path_check_tolerance_dirty(path) {
+    if (!variable_struct_exists(path, "rebuilt_tolerance") || path.rebuilt_tolerance != global.gmvex_tolerance) {
+        path.dirty = true;
     }
 }

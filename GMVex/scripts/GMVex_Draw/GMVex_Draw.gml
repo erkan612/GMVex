@@ -1,4 +1,5 @@
 function gmvex_fill_draw(path, col, alpha) {
+    gmvex_path_check_tolerance_dirty(path);
     if (path.dirty) gmvex_path_rebuild(path);
     if (path.vbuff == -1 && path.vbuff_cw == -1) return;
 
@@ -69,12 +70,14 @@ function gmvex_stroke_vertex(vb, x, y, col, a, u = 0, v = 0) {
 }
 
 function gmvex_stroke_draw(path, width, col, alpha, join_mode = gmvex_join.BEVEL, cap_mode = gmvex_cap.BUTT, miter_limit = 4) {
+    gmvex_path_check_tolerance_dirty(path);
     if (path.dirty) gmvex_path_rebuild(path);
 
     var needs_rebuild = !variable_struct_exists(path, "stroke_vbuff") || path.stroke_vbuff == -1
         || !variable_struct_exists(path, "stroke_width") || path.stroke_width != width
         || !variable_struct_exists(path, "stroke_join")  || path.stroke_join != join_mode
         || !variable_struct_exists(path, "stroke_cap")   || path.stroke_cap != cap_mode
+        || !variable_struct_exists(path, "stroke_tolerance") || path.stroke_tolerance != global.gmvex_tolerance
         || (variable_struct_exists(path, "stroke_dash_dirty") && path.stroke_dash_dirty);
 
     if (needs_rebuild) {
@@ -106,7 +109,7 @@ function gmvex_stroke_draw(path, width, col, alpha, join_mode = gmvex_join.BEVEL
             }
         }
         vertex_end(vb); vertex_freeze(vb);
-        path.stroke_vbuff = vb; path.stroke_width = width; path.stroke_join = join_mode; path.stroke_cap = cap_mode; path.stroke_dash_dirty = false;
+        path.stroke_vbuff = vb; path.stroke_width = width; path.stroke_join = join_mode; path.stroke_cap = cap_mode; path.stroke_tolerance = global.gmvex_tolerance; path.stroke_dash_dirty = false;
     }
 
     var mat = gmvex_path_get_matrix(path);
