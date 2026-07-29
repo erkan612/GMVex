@@ -70,6 +70,22 @@ function gmvex_path_clone(path) {
         clone.toy = variable_struct_exists(path, "toy") ? path.toy : 0;
     }
 
+    if (variable_struct_exists(path, "flat_subpaths")) {
+        var new_flat = [];
+        for (var s = 0; s < array_length(path.flat_subpaths); s++) {
+            var fsp = path.flat_subpaths[s];
+            var new_pts = array_create(array_length(fsp.points));
+            for (var p = 0; p < array_length(fsp.points); p++) {
+                new_pts[p] = [fsp.points[p][0], fsp.points[p][1]];
+            }
+            array_push(new_flat, { points: new_pts, closed: fsp.closed });
+        }
+        clone.flat_subpaths = new_flat;
+    }
+    if (variable_struct_exists(path, "bbox")) {
+        clone.bbox = [path.bbox[0], path.bbox[1], path.bbox[2], path.bbox[3]];
+    }
+
     return clone;
 }
 
@@ -126,7 +142,7 @@ function gmvex_path_merge(paths) {
     for (var i = 0; i < array_length(paths); i++) {
         var baked = gmvex_path_clone(paths[i]);
         gmvex_path_apply_transform_all(baked);
-        gmvex_path_rebuild(baked);
+        if (baked.dirty) gmvex_path_rebuild(baked);
 
         for (var s = 0; s < array_length(baked.flat_subpaths); s++) {
             var src_pts = baked.flat_subpaths[s].points;

@@ -8,97 +8,131 @@ function gmvex_path_rebuild(path) {
     vertex_begin(vb_cw,  global.gmvex_vformat_pos);
 
     var minx = infinity, miny = infinity, maxx = -infinity, maxy = -infinity;
-    path.flat_subpaths = [];
 
-    for (var s = 0; s < array_length(path.subpaths); s++) {
-        var sp = path.subpaths[s];
-        var out_pts = [];
+    var flat_only = (array_length(path.subpaths) == 0)
+        && variable_struct_exists(path, "flat_subpaths")
+        && array_length(path.flat_subpaths) > 0;
 
-        if (variable_struct_exists(sp, "splinepts")) {
-            var spts = sp.splinepts;
-		    var n = array_length(spts);
-		    var closed = sp.closed;
+    if (!flat_only) {
+        path.flat_subpaths = [];
 
-		    var get_pt = function(i, pts, n, closed) {
-		        if (closed) {
-		            return pts[(i + n) mod n];
-		        } else {
-		            return pts[clamp(i, 0, n - 1)];
-		        }
-		    };
+        for (var s = 0; s < array_length(path.subpaths); s++) {
+            var sp = path.subpaths[s];
+            var out_pts = [];
 
-		    if (!closed) array_push(out_pts, spts[0]);
-    
-		    var limit = closed ? n : n - 1;
-		    for (var i = 0; i < limit; i++) {
-		        var p0 = get_pt(i - 1, spts, n, closed);
-		        var p1 = spts[i];
-		        var p2 = spts[(i + 1) mod n];
-		        var p3 = get_pt(i + 2, spts, n, closed);
-        
-		        var b1x = p1[0] + (p2[0]-p0[0])/6, b1y = p1[1] + (p2[1]-p0[1])/6;
-		        var b2x = p2[0] - (p3[0]-p1[0])/6, b2y = p2[1] - (p3[1]-p1[1])/6;
-        
-		        gmvex_flatten_cubic(p1[0], p1[1], b1x, b1y, b2x, b2y, p2[0], p2[1], 0, out_pts);
-		    }
-        } else {
-            var cx = 0, cy = 0;
-            for (var i = 0; i < array_length(sp.commands); i++) {
-                var c = sp.commands[i];
-                switch (c.type) {
-                    case gmvex_cmd.MOVETO:
-                        cx = c.x; cy = c.y;
-                        array_push(out_pts, [cx, cy]);
-                        break;
-                    case gmvex_cmd.LINETO:
-                        cx = c.x; cy = c.y;
-                        array_push(out_pts, [cx, cy]);
-                        break;
-                    case gmvex_cmd.QUADTO: {
-                        var c1x = cx + (2/3)*(c.cx-cx),   c1y = cy + (2/3)*(c.cy-cy);
-                        var c2x = c.x + (2/3)*(c.cx-c.x), c2y = c.y + (2/3)*(c.cy-c.y);
-                        if (c.easing != -1)
-                            gmvex_flatten_cubic_eased(cx,cy, c1x,c1y, c2x,c2y, c.x,c.y, c.easing, out_pts);
-                        else
-                            gmvex_flatten_cubic(cx,cy, c1x,c1y, c2x,c2y, c.x,c.y, 0, out_pts);
-                        cx = c.x; cy = c.y;
-                        break;
+            if (variable_struct_exists(sp, "splinepts")) {
+                var spts = sp.splinepts;
+                var n = array_length(spts);
+                var closed = sp.closed;
+
+                var get_pt = function(i, pts, n, closed) {
+                    if (closed) {
+                        return pts[(i + n) mod n];
+                    } else {
+                        return pts[clamp(i, 0, n - 1)];
                     }
-                    case gmvex_cmd.CUBICTO:
-                        if (c.easing != -1)
-                            gmvex_flatten_cubic_eased(cx,cy, c.c1x,c.c1y, c.c2x,c.c2y, c.x,c.y, c.easing, out_pts);
-                        else
-                            gmvex_flatten_cubic(cx,cy, c.c1x,c.c1y, c.c2x,c.c2y, c.x,c.y, 0, out_pts);
-                        cx = c.x; cy = c.y;
-                        break;
+                };
+
+                if (!closed) array_push(out_pts, spts[0]);
+
+                var limit = closed ? n : n - 1;
+                for (var i = 0; i < limit; i++) {
+                    var p0 = get_pt(i - 1, spts, n, closed);
+                    var p1 = spts[i];
+                    var p2 = spts[(i + 1) mod n];
+                    var p3 = get_pt(i + 2, spts, n, closed);
+
+                    var b1x = p1[0] + (p2[0]-p0[0])/6, b1y = p1[1] + (p2[1]-p0[1])/6;
+                    var b2x = p2[0] - (p3[0]-p1[0])/6, b2y = p2[1] - (p3[1]-p1[1])/6;
+
+                    gmvex_flatten_cubic(p1[0], p1[1], b1x, b1y, b2x, b2y, p2[0], p2[1], 0, out_pts);
+                }
+            } else {
+                var cx = 0, cy = 0;
+                for (var i = 0; i < array_length(sp.commands); i++) {
+                    var c = sp.commands[i];
+                    switch (c.type) {
+                        case gmvex_cmd.MOVETO:
+                            cx = c.x; cy = c.y;
+                            array_push(out_pts, [cx, cy]);
+                            break;
+                        case gmvex_cmd.LINETO:
+                            cx = c.x; cy = c.y;
+                            array_push(out_pts, [cx, cy]);
+                            break;
+                        case gmvex_cmd.QUADTO: {
+                            var c1x = cx + (2/3)*(c.cx-cx),   c1y = cy + (2/3)*(c.cy-cy);
+                            var c2x = c.x + (2/3)*(c.cx-c.x), c2y = c.y + (2/3)*(c.cy-c.y);
+                            if (c.easing != -1)
+                                gmvex_flatten_cubic_eased(cx,cy, c1x,c1y, c2x,c2y, c.x,c.y, c.easing, out_pts);
+                            else
+                                gmvex_flatten_cubic(cx,cy, c1x,c1y, c2x,c2y, c.x,c.y, 0, out_pts);
+                            cx = c.x; cy = c.y;
+                            break;
+                        }
+                        case gmvex_cmd.CUBICTO:
+                            if (c.easing != -1)
+                                gmvex_flatten_cubic_eased(cx,cy, c.c1x,c.c1y, c.c2x,c.c2y, c.x,c.y, c.easing, out_pts);
+                            else
+                                gmvex_flatten_cubic(cx,cy, c.c1x,c.c1y, c.c2x,c.c2y, c.x,c.y, 0, out_pts);
+                            cx = c.x; cy = c.y;
+                            break;
+                    }
+                }
+            }
+
+            var n = array_length(out_pts);
+            for (var i = 0; i < n; i++) {
+                minx = min(minx, out_pts[i][0]); maxx = max(maxx, out_pts[i][0]);
+                miny = min(miny, out_pts[i][1]); maxy = max(maxy, out_pts[i][1]);
+            }
+
+            if (n < 2) continue;
+
+            array_push(path.flat_subpaths, { points: out_pts, closed: sp.closed });
+
+            var can_fill = (n >= 3);
+            if (can_fill) {
+                var x0 = out_pts[0][0], y0 = out_pts[0][1];
+                for (var i = 1; i < n - 1; i++) {
+                    var tx1 = out_pts[i][0],   ty1 = out_pts[i][1];
+                    var tx2 = out_pts[i+1][0], ty2 = out_pts[i+1][1];
+                    var target_vb = vb_ccw;
+                    if (path.winding == gmvex_winding.NONZERO) {
+                        var tri_area = (x0*ty1 - tx1*y0) + (tx1*ty2 - tx2*ty1) + (tx2*y0 - x0*ty2);
+                        target_vb = (tri_area < 0) ? vb_cw : vb_ccw;
+                    }
+                    vertex_position_3d(target_vb, x0, y0, 0);
+                    vertex_position_3d(target_vb, tx1, ty1, 0);
+                    vertex_position_3d(target_vb, tx2, ty2, 0);
                 }
             }
         }
+    } else {
+        for (var s = 0; s < array_length(path.flat_subpaths); s++) {
+            var pts = path.flat_subpaths[s].points;
+            var n = array_length(pts);
 
-        var n = array_length(out_pts);
-        for (var i = 0; i < n; i++) {
-            minx = min(minx, out_pts[i][0]); maxx = max(maxx, out_pts[i][0]);
-            miny = min(miny, out_pts[i][1]); maxy = max(maxy, out_pts[i][1]);
-        }
+            for (var i = 0; i < n; i++) {
+                minx = min(minx, pts[i][0]); maxx = max(maxx, pts[i][0]);
+                miny = min(miny, pts[i][1]); maxy = max(maxy, pts[i][1]);
+            }
 
-        if (n < 2) continue;
-
-        array_push(path.flat_subpaths, { points: out_pts, closed: sp.closed });
-
-        var can_fill = (n >= 3);
-        if (can_fill) {
-            var x0 = out_pts[0][0], y0 = out_pts[0][1];
-            for (var i = 1; i < n - 1; i++) {
-                var tx1 = out_pts[i][0],   ty1 = out_pts[i][1];
-                var tx2 = out_pts[i+1][0], ty2 = out_pts[i+1][1];
-                var target_vb = vb_ccw;
-                if (path.winding == gmvex_winding.NONZERO) {
-                    var tri_area = (x0*ty1 - tx1*y0) + (tx1*ty2 - tx2*ty1) + (tx2*y0 - x0*ty2);
-                    target_vb = (tri_area < 0) ? vb_cw : vb_ccw;
+            var can_fill = (n >= 3);
+            if (can_fill) {
+                var x0 = pts[0][0], y0 = pts[0][1];
+                for (var i = 1; i < n - 1; i++) {
+                    var tx1 = pts[i][0],   ty1 = pts[i][1];
+                    var tx2 = pts[i+1][0], ty2 = pts[i+1][1];
+                    var target_vb = vb_ccw;
+                    if (path.winding == gmvex_winding.NONZERO) {
+                        var tri_area = (x0*ty1 - tx1*y0) + (tx1*ty2 - tx2*ty1) + (tx2*y0 - x0*ty2);
+                        target_vb = (tri_area < 0) ? vb_cw : vb_ccw;
+                    }
+                    vertex_position_3d(target_vb, x0, y0, 0);
+                    vertex_position_3d(target_vb, tx1, ty1, 0);
+                    vertex_position_3d(target_vb, tx2, ty2, 0);
                 }
-                vertex_position_3d(target_vb, x0, y0, 0);
-                vertex_position_3d(target_vb, tx1, ty1, 0);
-                vertex_position_3d(target_vb, tx2, ty2, 0);
             }
         }
     }

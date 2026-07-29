@@ -28,18 +28,15 @@
 *   					 ╚██████╔╝██║ ╚═╝ ██║ ╚████╔╝ ███████╗██╔╝ ██╗		                 *
 *   					  ╚═════╝ ╚═╝     ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝		                 *
 *   						       GameMaker Vector Library									 *
-*   						            Version 1.2.76					                     *
+*   						            Version 1.2.81					                     *
 *   																                         *
 *   						             by erkan612					                     *
 *   					 *********************************************                       *
 *********************************************************************************************/
 
 // TODO: some show debug message logs needs to be improved and give more detail
-// TODO: add more convenience functions, especially for svg importer
-// TODO: current transform handling implementation of path is not capable of svg's shear transforms,
-//       see if we can get it with minimal tweaks or some workarounds,
-//       applying the transforms while importing is an option that i do not want to pick directly,
-//       its better than nothing but it will make it hard baked
+// TODO: add more convenience functions, especially for svg importer and shear
+// TODO: make the transform handling more user friendly
 // TODO: CFF and OTF needs support, huge gaps needs to be filled, not a must now but worth adding in free time
 // TODO: adding text render without font file requirement,
 //       but i fear that might cost too much time than it should, 

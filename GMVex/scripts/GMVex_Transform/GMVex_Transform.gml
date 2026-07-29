@@ -16,8 +16,8 @@ function gmvex_path_get_matrix(path) {
     if (!variable_struct_exists(path, "tmatrix")) return matrix_build_identity();
     var m = path.tmatrix;
     return [
-        m[0], m[2], 0, 0,
-        m[1], m[3], 0, 0,
+        m[0], m[1], 0, 0,
+        m[2], m[3], 0, 0,
         0,    0,    1, 0,
         m[4], m[5], 0, 1
     ];
@@ -145,7 +145,8 @@ function gmvex_path_apply_rotation(path) {
     }
 
     var scale_h = sqrt(m[0]*m[0] + m[1]*m[1]);
-    var scale_v = sqrt(m[2]*m[2] + m[3]*m[3]);
+    var det = m[0]*m[3] - m[1]*m[2];
+    var scale_v = (scale_h == 0) ? 0 : det / scale_h; // signed, negative means reflection
     path.tmatrix = [scale_h, 0, 0, scale_v, m[4], m[5]];
     path.dirty = true;
     if (variable_struct_exists(path, "stroke_vbuff")) path.stroke_dash_dirty = true;
@@ -180,7 +181,9 @@ function gmvex_path_apply_scale(path) {
     if (!variable_struct_exists(path, "tmatrix")) return;
     var m = path.tmatrix;
     var scale_h = sqrt(m[0]*m[0] + m[1]*m[1]);
-    var scale_v = sqrt(m[2]*m[2] + m[3]*m[3]);
+    if (scale_h == 0) return;
+    var det = m[0]*m[3] - m[1]*m[2];
+    var scale_v = det / scale_h; // signed, negative means reflection
     if (scale_h == 1 && scale_v == 1) return;
 
     var rot = radtodeg(arctan2(m[1], m[0]));

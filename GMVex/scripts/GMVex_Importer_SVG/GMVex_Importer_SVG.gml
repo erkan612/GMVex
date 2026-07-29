@@ -627,28 +627,22 @@ function gmvex_svg_walk_collect(element, group, results, default_color, gradient
             var m = gmvex_svg_parse_transform_attr(element.attributes[? "transform"]);
             group.gtmatrix = m;
         }
-        for (var i = 0; i < array_length(element.children); i++) {
-            var child = element.children[i];
-            if (child.tag == "use" && !is_undefined(id_map)) {
-                gmvex_svg_resolve_use(child, group, results, default_color, gradient_map, id_map, 0, class_map);
-            } else if (child.tag == "text") {
-                var text_results = gmvex_svg_resolve_text(child, default_color, font_map, default_font);
-                for (var j = 0; j < array_length(text_results); j++) {
-                    gmvex_group_add_path(group, text_results[j].path);
-                    array_push(results, text_results[j]);
-                }
-            } else if (child.tag == "g") {
-                var child_group = gmvex_group_create();
-                gmvex_group_add_group(group, child_group);
-                gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map, font_map, default_font, class_map);
-            } else {
-                var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map, 0, class_map);
-                if (!is_undefined(result)) {
-                    gmvex_group_add_path(group, result.path);
-                    array_push(results, result);
-                }
+
+        var has_clip = !is_undefined(id_map) && ds_map_exists(element.attributes, "clip-path");
+        var has_mask = !is_undefined(id_map) && ds_map_exists(element.attributes, "mask");
+
+        if (has_clip || has_mask) {
+            var clip_str = has_clip ? element.attributes[? "clip-path"] : "";
+            var mask_str = has_mask ? element.attributes[? "mask"] : "";
+            var resolved = gmvex_svg_resolve_group_clip_mask(element, default_color, gradient_map, id_map, font_map, default_font, class_map, clip_str, mask_str);
+            for (var i = 0; i < array_length(resolved); i++) {
+                gmvex_group_add_path(group, resolved[i].path);
+                array_push(results, resolved[i]);
             }
+            return;
         }
+
+        gmvex_svg_walk_collect_children(element, group, results, default_color, gradient_map, id_map, font_map, default_font, class_map);
     }
 }
 
@@ -787,10 +781,16 @@ function gmvex_svg_parse_transform_function(str, pos) {
             m = [cs, sn, -sn, cs, 0, 0];
         }
     } else if (name == "matrix") {
-        if (n >= 6) m = [parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]];
-    } else {
-        return { matrix: gmvex_svg_matrix_identity(), pos: pos };
-    }
+	    if (n >= 6) m = [parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]];
+	} else if (name == "skewX") {
+	    var deg = (n >= 1) ? parts[0] : 0;
+	    m = [1, 0, tan(degtorad(deg)), 1, 0, 0];
+	} else if (name == "skewY") {
+	    var deg = (n >= 1) ? parts[0] : 0;
+	    m = [1, tan(degtorad(deg)), 0, 1, 0, 0];
+	} else {
+	    return { matrix: gmvex_svg_matrix_identity(), pos: pos };
+	}
 
     return { matrix: m, pos: pos };
 }
@@ -818,12 +818,13 @@ function gmvex_svg_decompose_matrix(m) {
 
     var xscale = sqrt(a*a + b*b);
     var rot = radtodeg(arctan2(b, a));
-    var yscale = sqrt(c*c + d*d);
 
-    var actual_angle_cd = radtodeg(arctan2(d, c));
-    var expected_angle_cd = rot + 90;
-    var angle_diff = ((actual_angle_cd - expected_angle_cd + 180) mod 360) - 180;
-    var has_shear = abs(angle_diff) > 0.01;
+    var col_dot = a*c + b*d;
+    var col_mag_product = max(xscale * sqrt(c*c + d*d), 0.000001);
+    var has_shear = abs(col_dot / col_mag_product) > 0.001;
+
+    var det = a*d - b*c;
+    var yscale = (xscale == 0) ? 0 : det / xscale; // signed, negative means reflection
 
     return { x: e, y: f, rot: rot, xscale: xscale, yscale: yscale, has_shear: has_shear };
 }
@@ -1072,8 +1073,9 @@ function gmvex_svg_resolve_use(element, group, results, default_color, gradient_
         if (ds_map_exists(referenced.attributes, "transform")) {
             var sm = gmvex_svg_parse_transform_attr(referenced.attributes[? "transform"]);
             var sdec = gmvex_svg_decompose_matrix(sm);
-            if (!sdec.has_shear) {
-                gmvex_group_set_transform(use_group, use_group.gx, use_group.gy, use_group.grot + sdec.rot, use_group.gxscale * sdec.xscale, use_group.gyscale * sdec.yscale);
+            var use_dec = gmvex_svg_decompose_matrix(use_group.gtmatrix);
+            if (!sdec.has_shear && !use_dec.has_shear) {
+                gmvex_group_set_transform(use_group, use_dec.x, use_dec.y, use_dec.rot + sdec.rot, use_dec.xscale * sdec.xscale, use_dec.yscale * sdec.yscale);
             }
         }
     } else {
@@ -1171,29 +1173,8 @@ function gmvex_svg_resolve_clip_path(target_path, clip_path_str, id_map, default
         bw = tbbox[2] - tbbox[0]; bh = tbbox[3] - tbbox[1];
     }
 
-    var child_paths = [];
-    var winding_counts = [0, 0];
-    var n = array_length(clip_element.children);
-    for (var i = 0; i < n; i++) {
-        var child_result = gmvex_svg_element_to_result(clip_element.children[i], default_color, gradient_map, id_map, depth, class_map);
-        if (is_undefined(child_result)) continue;
-        var cp = child_result.path;
-        winding_counts[cp.winding] += 1;
-        gmvex_path_apply_transform_all(cp);
-        if (use_obb) {
-            gmvex_path_set_transform(cp, 0, 0, 0, bw, bh);
-            gmvex_path_apply_scale(cp);
-            gmvex_path_set_transform(cp, bx0, by0, 0, 1, 1);
-            gmvex_path_apply_position(cp);
-        }
-        array_push(child_paths, cp);
-    }
-
-    var clip_shape_path = gmvex_svg_merge_paths_flat(child_paths);
+    var clip_shape_path = gmvex_svg_build_clip_shape(clip_element, clip_id, default_color, gradient_map, id_map, depth, class_map, bx0, by0, bw, bh, use_obb);
     if (is_undefined(clip_shape_path)) return target_path;
-    if (winding_counts[0] > 0 && winding_counts[1] > 0) {
-        show_debug_message("gmvex_svg_import: clipPath '" + clip_id + "' children have different fill-rule values - not preserved when merging, result uses nonzero winding.");
-    }
 
     gmvex_path_apply_position(target_path);
     gmvex_path_apply_rotation(target_path);
@@ -1223,29 +1204,8 @@ function gmvex_svg_resolve_mask(target_path, mask_str, id_map, default_color, gr
         bw = bbox[2] - bbox[0]; bh = bbox[3] - bbox[1];
     }
 
-    var child_paths = [];
-    var winding_counts = [0, 0];
-    var n = array_length(mask_element.children);
-    for (var i = 0; i < n; i++) {
-        var child_result = gmvex_svg_element_to_result(mask_element.children[i], default_color, gradient_map, id_map, depth, class_map);
-        if (is_undefined(child_result)) continue;
-        var cp = child_result.path;
-        winding_counts[cp.winding] += 1;
-        gmvex_path_apply_transform_all(cp);
-        if (use_obb) {
-            gmvex_path_set_transform(cp, 0, 0, 0, bw, bh);
-            gmvex_path_apply_scale(cp);
-            gmvex_path_set_transform(cp, bx0, by0, 0, 1, 1);
-            gmvex_path_apply_position(cp);
-        }
-        array_push(child_paths, cp);
-    }
-
-    var combined = gmvex_svg_merge_paths_flat(child_paths);
+    var combined = gmvex_svg_build_clip_shape(mask_element, mask_id, default_color, gradient_map, id_map, depth, class_map, bx0, by0, bw, bh, use_obb);
     if (is_undefined(combined)) return;
-    if (winding_counts[0] > 0 && winding_counts[1] > 0) {
-        show_debug_message("gmvex_svg_import: mask '" + mask_id + "' children have different fill-rule values - not preserved when merging, result uses nonzero winding.");
-    }
 
     gmvex_path_set_mask(target_path, combined);
 }
@@ -1340,4 +1300,126 @@ function gmvex_svg_collect_css_classes(element, class_map) {
     for (var i = 0; i < array_length(element.children); i++) {
         gmvex_svg_collect_css_classes(element.children[i], class_map);
     }
+}
+
+function gmvex_svg_build_clip_shape(source_element, source_id, default_color, gradient_map, id_map, depth, class_map, bx0, by0, bw, bh, use_obb) {
+    var child_paths = [];
+    var winding_counts = [0, 0];
+    var n = array_length(source_element.children);
+    for (var i = 0; i < n; i++) {
+        var child_result = gmvex_svg_element_to_result(source_element.children[i], default_color, gradient_map, id_map, depth, class_map);
+        if (is_undefined(child_result)) continue;
+        var cp = child_result.path;
+        winding_counts[cp.winding] += 1;
+        gmvex_path_apply_transform_all(cp);
+        if (use_obb) {
+            gmvex_path_set_transform(cp, 0, 0, 0, bw, bh);
+            gmvex_path_apply_scale(cp);
+            gmvex_path_set_transform(cp, bx0, by0, 0, 1, 1);
+            gmvex_path_apply_position(cp);
+        }
+        array_push(child_paths, cp);
+    }
+
+    var shape_path = gmvex_svg_merge_paths_flat(child_paths);
+    if (winding_counts[0] > 0 && winding_counts[1] > 0) {
+        show_debug_message("gmvex_svg_import: clip/mask source '" + source_id + "' has children with different fill-rule values - not preserved when merging, result uses nonzero winding.");
+    }
+    return shape_path;
+}
+
+function gmvex_svg_walk_collect_children(element, group, results, default_color, gradient_map, id_map, font_map, default_font, class_map) {
+    for (var i = 0; i < array_length(element.children); i++) {
+        var child = element.children[i];
+        if (child.tag == "use" && !is_undefined(id_map)) {
+            gmvex_svg_resolve_use(child, group, results, default_color, gradient_map, id_map, 0, class_map);
+        } else if (child.tag == "text") {
+            var text_results = gmvex_svg_resolve_text(child, default_color, font_map, default_font);
+            for (var j = 0; j < array_length(text_results); j++) {
+                gmvex_group_add_path(group, text_results[j].path);
+                array_push(results, text_results[j]);
+            }
+        } else if (child.tag == "g") {
+            var child_group = gmvex_group_create();
+            gmvex_group_add_group(group, child_group);
+            gmvex_svg_walk_collect(child, child_group, results, default_color, gradient_map, id_map, font_map, default_font, class_map);
+        } else {
+            var result = gmvex_svg_element_to_result(child, default_color, gradient_map, id_map, 0, class_map);
+            if (!is_undefined(result)) {
+                gmvex_group_add_path(group, result.path);
+                array_push(results, result);
+            }
+        }
+    }
+}
+
+function gmvex_svg_apply_group_clip(results_in, clip_path_str, default_color, gradient_map, id_map, class_map, depth = 0) {
+    if (depth >= 16) {
+        show_debug_message("gmvex_svg_import: clip-path nesting exceeded safe depth (16) on a <g> - likely a circular reference, clip-path left unapplied here.");
+        return results_in;
+    }
+    var clip_id = gmvex_svg_extract_url_id(clip_path_str);
+    if (clip_id == "" || !ds_map_exists(id_map, clip_id)) return results_in;
+
+    var clip_element = id_map[? clip_id];
+    if (clip_element.tag != "clipPath" || array_length(clip_element.children) == 0) return results_in;
+
+    var units = gmvex_svg_get_attr(clip_element.attributes, "clipPathUnits", "userSpaceOnUse");
+    if (units == "objectBoundingBox") {
+        show_debug_message("gmvex_svg_import: clip-path with clipPathUnits=objectBoundingBox on a <g> is not supported yet (only userSpaceOnUse) - clip-path '" + clip_id + "' left unapplied.");
+        return results_in;
+    }
+
+    var clip_shape_path = gmvex_svg_build_clip_shape(clip_element, clip_id, default_color, gradient_map, id_map, depth + 1, class_map, 0, 0, 1, 1, false);
+    if (is_undefined(clip_shape_path)) return results_in;
+    gmvex_svg_shift_flat_subpaths(clip_shape_path, 0.0173, 0.0091);
+
+    for (var i = 0; i < array_length(results_in); i++) {
+        var clipped = gmvex_path_boolean(results_in[i].path, clip_shape_path, gmvex_bool.INTERSECTION);
+        gmvex_path_destroy(results_in[i].path);
+        results_in[i].path = clipped;
+    }
+    gmvex_path_destroy(clip_shape_path);
+    return results_in;
+}
+
+function gmvex_svg_apply_group_mask(results_in, mask_str, default_color, gradient_map, id_map, class_map, depth = 0) {
+    if (depth >= 16) {
+        show_debug_message("gmvex_svg_import: mask nesting exceeded safe depth (16) on a <g> - likely a circular reference, mask left unapplied here.");
+        return;
+    }
+    var mask_id = gmvex_svg_extract_url_id(mask_str);
+    if (mask_id == "" || !ds_map_exists(id_map, mask_id)) return;
+
+    var mask_element = id_map[? mask_id];
+    if (mask_element.tag != "mask" || array_length(mask_element.children) == 0) return;
+
+    var units = gmvex_svg_get_attr(mask_element.attributes, "maskContentUnits", "userSpaceOnUse");
+    if (units == "objectBoundingBox") {
+        show_debug_message("gmvex_svg_import: mask with maskContentUnits=objectBoundingBox on a <g> is not supported yet (only userSpaceOnUse) - mask '" + mask_id + "' left unapplied.");
+        return;
+    }
+
+    var mask_shape_path = gmvex_svg_build_clip_shape(mask_element, mask_id, default_color, gradient_map, id_map, depth + 1, class_map, 0, 0, 1, 1, false);
+    if (is_undefined(mask_shape_path)) return;
+
+    for (var i = 0; i < array_length(results_in); i++) {
+        gmvex_path_set_mask(results_in[i].path, gmvex_path_clone(mask_shape_path));
+    }
+    gmvex_path_destroy(mask_shape_path);
+}
+
+function gmvex_svg_resolve_group_clip_mask(group_element, default_color, gradient_map, id_map, font_map, default_font, class_map, clip_str, mask_str) {
+    var temp_results = [];
+    var temp_group = gmvex_group_create();
+    gmvex_svg_walk_collect_children(group_element, temp_group, temp_results, default_color, gradient_map, id_map, font_map, default_font, class_map);
+    gmvex_group_resolve_transforms(temp_group);
+
+    if (clip_str != "") {
+        temp_results = gmvex_svg_apply_group_clip(temp_results, clip_str, default_color, gradient_map, id_map, class_map);
+    }
+    if (mask_str != "") {
+        gmvex_svg_apply_group_mask(temp_results, mask_str, default_color, gradient_map, id_map, class_map);
+    }
+    return temp_results;
 }

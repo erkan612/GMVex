@@ -98,8 +98,8 @@ function gmvex_transform_point_inverse(path, wx, wy) {
     var dx = wx - m[4];
     var dy = wy - m[5];
 
-    var lx = (m[3]*dx - m[1]*dy) / det;
-    var ly = (-m[2]*dx + m[0]*dy) / det;
+    var lx = (m[3]*dx - m[2]*dy) / det;
+    var ly = (-m[1]*dx + m[0]*dy) / det;
 
     var tox = variable_struct_exists(path, "tox") ? path.tox : 0;
     var toy = variable_struct_exists(path, "toy") ? path.toy : 0;

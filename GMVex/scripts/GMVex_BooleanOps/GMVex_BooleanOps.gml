@@ -324,10 +324,10 @@ function gmvex_path_boolean(path_a, path_c, op) {
 	
 	var baked_a = gmvex_path_clone(path_a);
     gmvex_path_apply_transform_all(baked_a);
-	gmvex_path_rebuild(baked_a);
+	if (baked_a.dirty) gmvex_path_rebuild(baked_a);
     var baked_c = gmvex_path_clone(path_c);
     gmvex_path_apply_transform_all(baked_c);
-	gmvex_path_rebuild(baked_c);
+	if (baked_c.dirty) gmvex_path_rebuild(baked_c);
 
     var op_name = gmvex_bool_op_name(op);
     var loops_a = baked_a.flat_subpaths;
