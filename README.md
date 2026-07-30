@@ -205,5 +205,5 @@ for (var i = 0; i < array_length(imported.results); i++) gmvex_path_destroy(impo
 
 - TrueType fonts only (no CFF or OTF)
 - No text rendering without font files
-- No shear support in SVG transforms
-- Gradient stops limited to 8
+- Gradient stops limited to 32
+- non-convex clustering is not supported
