@@ -1,19 +1,5 @@
 # GMVex API Reference
 
-GMVex is a vector graphics framework for GameMaker: path construction and
-editing, transforms, groups, boolean path operations, masking, clip-path,
-gradient and stroke rendering, hit-testing, SVG import, and TrueType
-font/text rendering.
-
-Every function listed here has been read directly from source and
-cross-checked against real test output where possible, either a real
-font/SVG file, or fabricated test data where a real file wasn't
-available (noted explicitly where that's the case). Every known
-limitation is stated plainly rather than omitted; "not supported" means
-exactly that, not "probably fine, untested."
-
----
-
 ## Core Concepts
 
 ### Path local space vs. world placement
@@ -25,27 +11,32 @@ conflate:
   `gmvex_path_add_rect`, `gmvex_path_add_circle`, `gmvex_path_moveto`, etc.
   `path.bbox` is always computed from this space, *never* adjusted by the
   path's own transform.
-- **World placement** - `tx`, `ty`, `trot`, `txscale`, `tyscale`, `tox`,
-  `toy`, set via `gmvex_path_set_transform`. Applied only at draw time via
-  the GPU world matrix; never baked into `path.bbox` or `path.subpaths`
-  automatically.
+- **World placement** - `path.tmatrix`, a 6-element `[a,b,c,d,e,f]` affine
+  matrix (`x'=a·x+c·y+e, y'=b·x+d·y+f`), plus `tox`/`toy` tracking the
+  pivot point last used. Set via `gmvex_path_set_transform`. Applied only
+  at draw time via the GPU world matrix; never baked into `path.bbox` or
+  `path.subpaths` automatically. The `x`/`y`/`rot`/`xscale`/`yscale`/
+  `shear_x`/`shear_y` parameters passed to `gmvex_path_set_transform` are
+  compiled into `tmatrix` and not retained individually - there is no way
+  to read back what rotation a path was last set to, only the resulting
+  matrix.
 
 **This distinction is the single most common source of bugs in this
-framework.** Two systems in particular ignore `tx`/`ty` entirely and expect
-local-space coordinates:
+framework.** Two systems in particular ignore world placement entirely
+and expect local-space coordinates:
 
 - **`gmvex_path_boolean`** operates purely on each input path's raw local
   geometry. If two paths need boolean-combining based on where they're
   *positioned* in the world, their transforms must be baked in first via
   `gmvex_path_apply_transform_all`, otherwise two paths built with
-  identical local geometry but different `tx`/`ty` are treated as
+  identical local geometry but different placement are treated as
   perfectly coincident, producing degenerate near-zero-area results.
 - **Mask content** (`gmvex_path_set_mask`, and everything built on top of
   it) is positioned relative to the *target's* local/command space, not
   world space and not the mask path's own arbitrary origin. A mask circle
   meant to sit at the center of a target rectangle built via
   `gmvex_path_add_rect(target, 0, 0, 200, 200)` goes at local `(100,100)`, 
-  the center of that local box, regardless of whatever `tx`/`ty` the
+  the center of that local box, regardless of whatever placement the
   target itself has been given.
 
 ### Fill-time performance model
@@ -55,8 +46,9 @@ stencil incr/decr (nonzero winding) or invert (even-odd), then a covering
 rectangle writes color wherever the stencil is nonzero. Strokes are
 directly triangulated, no stencil pass needed. All draw functions cache
 their vertex buffers (`path.vbuff`/`path.vbuff_cw`/`path.stroke_vbuff`) and
-only rebuild on `path.dirty` or a relevant parameter change (stroke width,
-join, cap).
+only rebuild on `path.dirty`, a relevant parameter change (stroke width,
+join, cap), or a change to `global.gmvex_tolerance` since the geometry was
+last built.
 
 ### GPU/draw state discipline
 
@@ -82,9 +74,14 @@ tolerance to `0.5`.
 ### `gmvex_set_tolerance(tol)`
 Sets `global.gmvex_tolerance`, the flatness threshold curves are recursively
 subdivided against when building renderable geometry (smaller = smoother
-curves, more points, more triangles). Affects every path created or
-rebuilt after the call; does not retroactively re-flatten already-built
-geometry until something marks it dirty again.
+curves, more points, more triangles). Also governs round join/cap
+subdivision granularity in strokes (see *Stroke Drawing* below) - the
+angular step is solved from tolerance and the actual radius being drawn,
+not a fixed step count, so thicker strokes and finer tolerance both
+produce more segments. Affects every path the next time it's drawn or
+rebuilt, correctly triggers a rebuild on that next draw for an
+already-built, currently-clean path, tracked separately for a path's fill
+geometry and its stroke geometry since they're cached independently.
 
 ---
 
@@ -150,12 +147,19 @@ function when `path.dirty` is true; rarely needs to be called directly,
 except when you need `path.bbox`/`path.flat_subpaths` populated *before*
 any draw call happens (e.g. for a manual pixel-space calculation).
 
+Paths whose `subpaths` is empty but which already have real
+`flat_subpaths` content - the output of `gmvex_path_merge` or
+`gmvex_path_boolean`, or a clone of either - are handled correctly: the
+flatten-from-subpaths step is skipped (there is nothing to derive it
+from) and only the vertex buffers get rebuilt from the existing flattened
+points.
+
 ---
 
 ## Shape Primitives
 
 Convenience builders on top of the primitives above, all in local/command
-space, none touch `tx`/`ty`.
+space, none touch world placement.
 
 - **`gmvex_path_add_rect(path, x, y, w, h)`** - closed rectangle.
 - **`gmvex_path_add_rounded_rect(path, x, y, w, h, rx, ry = -1)`** -
@@ -187,34 +191,74 @@ equals end) is a no-op.
 See *Path local space vs. world placement* above for the core distinction
 this section builds on.
 
-### `gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0)`
-Sets `tx`/`ty`/`trot`/`txscale`/`tyscale`/`tox`/`toy`, the path's world
-placement, applied only via the GPU matrix at draw time. `origin_x`/
-`origin_y` is a pivot point (in local space) that rotation/scale are
-applied around before translation.
+### `gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0, shear_x = 0, shear_y = 0)`
+Builds `path.tmatrix`, the path's world placement, applied only via the
+GPU matrix at draw time. `origin_x`/`origin_y` is a pivot point (in local
+space) that rotation/scale are applied around before translation.
+`shear_x`/`shear_y` (degrees) compose as if shear were part of the scale
+step, applied to the point before rotation/translate/pivot - matching
+SVG's own ordering when several transform functions are listed together
+in one `transform` attribute. `shear_y` applies before `shear_x` when
+both are nonzero.
+
+**This function only produces a proper (non-degenerate) matrix for
+rotation, uniform-or-nonuniform scale, translation, and shear in any
+combination.** It cannot represent true perspective/projective distortion
+(the kind where parallel edges converge toward a vanishing point and a
+far edge appears shorter than a near one) - that needs a 3×3 matrix and a
+per-point division that has no equivalent here, or in SVG's own transform
+syntax. For a shape that needs to look like it's leaning against another
+already-sheared surface (a common technique in flat 2.5D/isometric-style
+art), shear is the right tool; for a shape that needs to visibly recede
+in true perspective, it is not, and there's no built-in feature that is -
+see the caveat under `gmvex_path_apply_scale`/`_rotation` below for what
+happens when a sheared path additionally needs baking, which is a
+related but separate limitation.
 
 ### `gmvex_path_get_matrix(path)`
-Builds and returns the GameMaker transform matrix from the path's current
-`tx`/`ty`/`trot`/`txscale`/`tyscale`/`tox`/`toy`. Returns an identity
-matrix if the path has never had a transform set at all (no `tx` field
-exists), every draw function relies on this fallback rather than
-requiring `gmvex_path_set_transform` to always be called first.
+Builds and returns the GameMaker transform matrix from `path.tmatrix`.
+Returns an identity matrix if the path has never had a transform set at
+all (no `tmatrix` field exists), every draw function relies on this
+fallback rather than requiring `gmvex_path_set_transform` to always be
+called first.
 
 ### `gmvex_path_apply_position(path)` / `gmvex_path_apply_rotation(path)` / `gmvex_path_apply_scale(path)`
-**Baking functions** - permanently write the current `tx`/`ty` (or
-`trot`, or `txscale`/`tyscale`) into the path's actual command
-coordinates, then reset that transform component to its identity value
-(`0` for position/rotation, `1` for scale). `apply_position` correctly
-accounts for whatever rotation/scale is *still* in effect at the moment
-it's called (un-rotating/un-scaling the translation before baking it in),
-so call order matters if baking components individually.
+**Baking functions** - permanently write the current position (or
+rotation, or scale) component of `path.tmatrix` into the path's actual
+command coordinates, then reset that component to its identity value.
+`apply_position` correctly accounts for whatever rotation/scale is
+*still* in effect at the moment it's called (un-rotating/un-scaling the
+translation before baking it in), so call order matters if baking
+components individually.
+
+`apply_scale` and `apply_rotation` both correctly preserve a reflection
+(a negative scale factor along one axis - a Y-axis flip is the common
+case, frequently produced by PDF-to-SVG export pipelines compensating
+for PDF's inverted coordinate system) when baking.
+
+**Neither function can bake true (non-orthogonal) shear.** Both are
+built around a rotation-times-scale decomposition of `tmatrix` with no
+third term for shear; a path whose matrix contains genuine shear (as
+opposed to a reflection, which these functions do handle) passes through
+either function's early-return check untouched, its shear component
+simply remains sitting in `tmatrix` rather than being folded into the
+path's actual point coordinates. This matters specifically because
+`gmvex_path_boolean`, `gmvex_path_merge`, and clip-path/mask resolution
+during SVG import all rely on baking to put two shapes into a shared
+coordinate space before doing point-level geometry math on them - a
+sheared shape going through any of those will have its shear silently
+absent from that math, even though the same shape renders with its shear
+completely correctly via a plain `gmvex_fill_draw`/`_stroke_draw` call,
+since those apply `tmatrix` as a single GPU matrix with no decomposition
+involved at all.
 
 ### `gmvex_path_apply_transform_all(path)`
 Bakes all three components in one call, in scale → rotate → position
 order. **This is the function to call before `gmvex_path_boolean`** if two
 paths need to be combined based on where they're actually positioned in
 the world, see the boolean-ops caveat below for what happens if this
-step is skipped.
+step is skipped. Subject to the same true-shear limitation described
+under `gmvex_path_apply_scale`/`_rotation` above.
 
 ---
 
@@ -230,9 +274,16 @@ Returns a new, empty group with an identity transform.
 ### `gmvex_group_add_path(group, path)` / `gmvex_group_add_group(group, child_group)`
 Adds a path or nested group as a member.
 
-### `gmvex_group_set_transform(group, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0)`
-Same parameter shape as `gmvex_path_set_transform`, but for the group as a
-whole.
+### `gmvex_group_set_transform(group, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0, shear_x = 0, shear_y = 0)`
+Same parameter shape as `gmvex_path_set_transform`, including the same
+`shear_x`/`shear_y` parameters, for the group as a whole.
+
+**Has no visible effect until `gmvex_group_resolve_transforms` is called
+again** if paths have already been added to the group or it has already
+been resolved once - this call only updates `group.gtmatrix` itself, it
+does not walk the hierarchy and push the new value into member paths'
+own `tmatrix`. That is a separate, required step; see
+`gmvex_group_resolve_transforms` immediately below.
 
 ### `gmvex_group_resolve_transforms(group, ancestor_acc = undefined)`
 **Must be called (recursively walks the whole hierarchy) before drawing**
@@ -244,7 +295,9 @@ mask system) so repeated calls compose correctly against the path's true
 authored position rather than compounding on top of whatever the previous
 resolve already wrote. Recurses into nested groups, composing rotation
 (additive), scale (multiplicative), and position (through the parent's
-own rotation/scale) at each level.
+own rotation/scale) at each level. Correctly composes shear too, since
+this composition is plain matrix multiplication with no decomposition
+step involved.
 
 ---
 
@@ -252,9 +305,17 @@ own rotation/scale) at each level.
 
 Pure geometry, no GPU calls, safe to call from any context including
 outside a Draw event. Both functions take **world-space** coordinates and
-internally transform them into the path's local space via its `tx`/`ty`/
-`trot`/`tx`/`tyscale`/`tox`/`toy`, so there's no need to pre-transform the
-point yourself.
+internally transform them into the path's local space via `path.tmatrix`
+(plus `tox`/`toy`), correctly handling rotation and shear, so there's no
+need to pre-transform the point yourself.
+
+**Known limitation:** both functions' bounding-box early-out check
+compares the incoming point directly against `path.bbox` before doing
+the inverse-transform. `path.bbox` is local-space; the incoming point is
+world-space per the functions' own contract. For a path with a nonzero
+position, this can reject a valid hit that falls outside the local-space
+bbox's numeric range even when the transformed point genuinely falls
+inside the shape.
 
 ### `gmvex_path_hit_test_fill(path, px, py)`
 Returns whether world point `(px,py)` falls inside the path's filled
@@ -291,8 +352,9 @@ stroke functions respect if present.
 ## Fill Drawing
 
 ### `gmvex_fill_draw(path, col, alpha)`
-Flat-color fill. Rebuilds if `path.dirty`. No-op if the path has no
-renderable geometry.
+Flat-color fill. Rebuilds if `path.dirty`, including when only
+`global.gmvex_tolerance` has changed since the path was last built. No-op
+if the path has no renderable geometry.
 
 ### `gmvex_fill_draw_masked(path, col, alpha)`
 Flat-color fill with per-pixel alpha multiplied by an attached mask's
@@ -313,13 +375,19 @@ instead of interpolating, since the projected `t` value ends up
 permanently out of the `[0,1]` range.
 
 `stops` is an array of `[position, color, alpha]` triples, position `0`–`1`.
-Maximum 8 stops.
+**Maximum 32 stops.** This ceiling comes directly from the gradient
+shaders' own fixed-size uniform arrays (`uniform vec4 u_stopColor[32]` /
+`uniform float u_stopPos[32]`) - every gradient fill uploads the full
+32-slot array per draw call regardless of how many stops that particular
+gradient actually has, so this is a fixed per-draw-call cost paid even by
+a basic 2-3 stop gradient.
 
 ### `gmvex_fill_draw_gradient_masked(path, grad_type, p0x, p0y, p1x, p1y, stops)`
 Gradient fill combined with an attached mask. Same local-space coordinate
-rule as `gmvex_fill_draw_gradient`. Internally renders the gradient to a
-small intermediate surface (sized to the path's bbox) unmasked, then
-composites through mask luminance, two-pass, not a single combined shader.
+rule and 32-stop ceiling as `gmvex_fill_draw_gradient`. Internally renders
+the gradient to a small intermediate surface (sized to the path's bbox)
+unmasked, then composites through mask luminance, two-pass, not a single
+combined shader.
 
 ---
 
@@ -328,7 +396,16 @@ composites through mask luminance, two-pass, not a single combined shader.
 ### `gmvex_stroke_draw(path, width, col, alpha, join_mode, cap_mode, miter_limit)`
 Flat-color stroke. `join_mode` is `gmvex_join.BEVEL/ROUND/MITER`, `cap_mode`
 is `gmvex_cap.BUTT/ROUND/SQUARE`. Respects `path.dash_array`/`dash_offset`
-if set.
+if set. Rebuilds its cached stroke geometry on a width/join/cap change or
+a `global.gmvex_tolerance` change since it was last built, tracked
+independently of the fill-side cache since stroke geometry lives in its
+own separate vertex buffer.
+
+`gmvex_join.ROUND` and `gmvex_cap.ROUND` subdivide their curved geometry
+based on `global.gmvex_tolerance` and the actual radius being drawn
+(stroke half-width for both caps and round joins), solving for the
+angular step that keeps the chord-to-arc deviation within tolerance
+rather than using a fixed step count.
 
 ### `gmvex_stroke_draw_masked(path, width, col, alpha, join_mode, cap_mode, miter_limit)`
 Stroke with mask luminance applied. **Important: mask sizing for strokes is
@@ -336,23 +413,20 @@ different from fills.** A stroke sits at the shape's *boundary*, not its
 interior, a mask radius that comfortably covers a filled shape's center
 can leave the boundary entirely outside the mask's coverage, making the
 whole stroke invisible with no error, no warning, and geometry/vbuff/
-uniform diagnostics all reporting perfectly healthy. This was chased at
-length during testing: every layer (mask surface content, vertex buffer,
-shader uniform resolution, GPU state) checked out correct individually,
-because the actual cause was purely geometric, a `r=60` mask circle
+uniform diagnostics all reporting perfectly healthy. A `r=60` mask circle
 centered on a `140×140` rectangle's middle never comes within 10px of the
-stroke sitting at that rectangle's edge. Confirmed across the full
-coverage spectrum: too small a radius masks out the entire stroke, a
-radius reaching only edge midpoints (not corners) produces a correct
-partial result, and a radius exceeding the corner distance shows the full
-outline. Size mask geometry to actually reach the stroke's position, not
-just the fill's interior. The mask surface itself is sized to the *fill*
-bbox, not stroke-width-expanded, stroke pixels outside that range clamp
-to the mask's nearest edge value.
+stroke sitting at that rectangle's edge. Across the coverage spectrum:
+too small a radius masks out the entire stroke, a radius reaching only
+edge midpoints (not corners) produces a correct partial result, and a
+radius exceeding the corner distance shows the full outline. Size mask
+geometry to actually reach the stroke's position, not just the fill's
+interior. The mask surface itself is sized to the *fill* bbox, not
+stroke-width-expanded, stroke pixels outside that range clamp to the
+mask's nearest edge value.
 
 ### `gmvex_stroke_draw_gradient(path, width, grad_type, p0x, p0y, p1x, p1y, stops, join_mode, cap_mode, miter_limit)`
-Gradient-colored stroke. Same local-space coordinate rule as the fill
-gradient functions.
+Gradient-colored stroke. Same local-space coordinate rule and 32-stop
+ceiling as the fill gradient functions.
 
 ### `gmvex_stroke_draw_gradient_masked(path, width, grad_type, p0x, p0y, p1x, p1y, stops, join_mode, cap_mode, miter_limit)`
 Gradient stroke with mask luminance. Same stroke-vs-fill mask sizing caveat
@@ -403,8 +477,8 @@ preserve mixed even-odd/nonzero fill-rules across merged mask content.
 
 ### `gmvex_path_boolean(path_a, path_c, op)`
 Boolean combine two paths. `op` is `gmvex_bool.UNION/INTERSECTION/
-A_NOT_C/C_NOT_A`. **Operates on raw local geometry only, ignores `tx`/
-`ty`/`trot`/scale entirely.** Bake transforms in first with
+A_NOT_C/C_NOT_A`. **Operates on raw local geometry only, ignores world
+placement entirely.** Bake transforms in first with
 `gmvex_path_apply_transform_all` if the two paths need to be combined based
 on their world positions, or the operation will treat them as if both sat
 at their untransformed local origin.
@@ -417,21 +491,37 @@ near-zero-area degenerate sliver (a giveaway bbox centered near the
 origin instead of near either circle's actual position), not an error or
 a crash. Once `gmvex_path_apply_transform_all` is called on both inputs
 first, the same two circles produce a correct lens-shaped intersection.
+Also confirmed working directly for straight-edge-vs-curved-edge
+combinations, such as a rectangle against a circle.
 
-**Not verified for straight-edge-vs-curved-edge combinations** (e.g.
-rectangle vs. circle) - a real internal guard
-(`gmvex_bool_stitch_arcs`'s non-termination check) was tripped by this
-combination during testing, and the root cause (likely in the
-intersection-finding step that feeds the arc-stitcher, not the stitcher
-itself) was not diagnosed. If you need axis-aligned-edge boolean ops
-reliably, test that specific combination before depending on it.
+**Boundary of what's reliable: any operand with a non-convex (reflex,
+inward-pointing) vertex can produce a "dangling arc end, no matching
+start" warning and return an empty result**, even when neither shape is
+tangent to the other and neither shares a coincident edge. This happens
+because each boundary arc's inside/outside classification is tested
+independently, via a single midpoint against the other shape, with no
+cross-check against neighboring arcs; near a cluster of intersection
+points close together around a reflex vertex, this can produce a set of
+kept arcs that don't form a closed loop - a node with two arcs arriving
+and none leaving, or the reverse. Two genuinely convex operands (two
+circles, or a rectangle and a circle) do not exhibit this regardless of
+how much or how little they overlap. If a shape used with this function
+might be non-convex, test that specific combination before depending on
+it; convex-vs-convex of any curve/line mix is solid.
 
-There is also an unexplained, unverified epsilon perturbation
-(`gmvex_path_set_transform(clip_shape_path, 0.0173, 0.0091)`-style nudge)
-applied before clip-path's own intersection call, presumably a
-coincident-edge precision workaround. Left untouched, since it isn't
-understood well enough to safely modify without its own dedicated
-investigation.
+A tiny fixed epsilon perturbation
+(`gmvex_svg_shift_flat_subpaths(baked_c, 0.0173, 0.0091)`) is applied to
+one operand immediately before the intersection-finding step, to break
+exact numerical coincidence between the two operands before the
+intersection math runs. Exactly-coincident or exactly-tangent geometry
+(a circle inscribed perfectly inside a square, radius exactly half the
+square's width, both centered at the same point, is a clean example) is
+a classic degenerate case for polygon-clipping algorithms in general,
+because floating-point rounding at the point of exact contact can
+inconsistently place a crossing just inside or just outside depending on
+which side of the tangent point is being evaluated. This same protection
+covers `gmvex_path_boolean` directly, not just paths that arrive via
+SVG clip-path import.
 
 ---
 
@@ -460,15 +550,43 @@ when working with `gmvex_svg_import` results.
   `userSpaceOnUse` (default)
 - Nesting, a mask's content may itself have a `clip-path`, and vice versa,
   up to a depth-16 recursion guard (circular-reference protection)
+- **`clip-path`/`mask` on a `<g>` element, applying to everything inside
+  it as a group.** The group's own descendants are collected and
+  individually clipped/masked against the referenced shape before the
+  group's own transform is composed onto them, so clipping composes
+  correctly with everything nested inside the clipped group.
+  `objectBoundingBox` units are not supported for this group-level case
+  (only `userSpaceOnUse`) - a group doesn't have a single unambiguous
+  target bounding box the way one leaf shape does.
+
+### Shear transforms
+`skewX(angle)` and `skewY(angle)` are parsed and applied correctly, both
+directly on a shape or group and composed through nested groups and
+`<use>`.
+
+`<use>` referencing an element whose *own* `transform` attribute contains
+genuine non-orthogonal shear has that referenced transform dropped
+entirely (not just the shear component - the whole thing, including any
+rotation/scale bundled into the same matrix) rather than composed. This
+is a deliberately conservative fallback in the matrix-decomposition
+helper used for this specific composition step - it avoids corrupting the
+result rather than mis-composing it, at the cost of dropping the
+transform outright when it can't be safely represented. Reflections (a
+Y-axis flip, common from PDF-derived SVG exports) composed through
+`<use>` are correctly distinguished from genuine shear and compose
+normally; only actual non-orthogonal shear hits this fallback.
+
+For the deeper reason shear can still be dropped for boolean ops,
+clip-path/mask resolution, and path merging specifically (as opposed to
+plain rendering, which is unaffected), see the true-shear limitation
+noted under `gmvex_path_apply_scale`/`_rotation` in *Transforms & Baking*
+above - clip-path and mask resolution during SVG import both rely on that
+same baking step internally, so a shape under a genuinely (non-
+orthogonally) sheared ancestor that also needs clip-path or mask
+resolution can still be affected, even though the shear composes and
+renders correctly for everything else.
 
 ### Not supported
-- **Shear/skew transforms.** Any `transform` attribute (shape, group, or
-  `<use>`) that includes shear, including certain `matrix(...)` forms that
-  can't decompose cleanly into translate+rotate+uniform-or-nonuniform-scale,
-  silently drops rotation and scale, keeping only translation. This is a
-  limitation of the underlying path/group transform representation itself
-  (`tx,ty,trot,txscale,tyscale,tox,toy`, no shear term), not just the SVG
-  importer. A console warning fires when this happens.
 - **CFF/OTF outlines** for `<text>`/font-related SVG content, same
   limitation as the font loader below.
 - `gmvex_svg_walk_element`/`gmvex_svg_walk_element_grouped` (simpler,
@@ -512,32 +630,15 @@ per rendered glyph (fewer than the character count if ligatures fired).
 Applies kerning and ligature substitution automatically when the loaded
 font has the relevant tables. Handles composite glyphs (accented
 characters built from a base + mark component) including component-level
-scale/rotation transforms, a real historical bug in this exact function
-silently applied only translation and dropped any component's own scale/
-skew matrix.
+scale/rotation transforms.
+
+Note: `italic_shear`, used elsewhere in this pipeline to synthesize a
+fake-italic slant when a font has no true italic variant, is unrelated to
+the shear transform described above - it shears glyph contour points
+directly at build time as plain local-space geometry, not through
+`tmatrix`.
 
 ### `gmvex_text_measure_width(font, text, size, letter_spacing)`
 Returns total advance width, applying the same kerning/ligature logic as
 `gmvex_text_to_paths`, required so centered/right-aligned text measures
 consistently with how it actually renders.
-
-### Not supported
-- **CFF/OTF outlines.** The single largest remaining gap. Requires an
-  entirely separate glyph-outline decoder: CFF's own INDEX/DICT container
-  parsing, a Type 2 charstring bytecode interpreter (stack-based VM with
-  subroutine calls, hint operators that must be parsed and skipped even
-  though unused, and a distinct variable-length numeric encoding). The
-  path data model already supports cubic Béziers (`gmvex_cmd.CUBICTO`,
-  CFF's native curve type) so no changes are needed there, only a new
-  glyph-to-path source parallel to the existing TrueType one.
-- **Vertical text layout.** No `vmtx` parsing, no vertical writing mode.
-  `gmvex_text_to_paths` is built entirely around horizontal cursor
-  advancement.
-- **`GPOS`-based positioning** of any kind, kerning or otherwise.
-- **Outlined/stroked text as a first-class feature**, not actually
-  missing, just not a dedicated function: `GMVex_TextContour.gml` already
-  produces real `gmvex_path` geometry per glyph, so calling
-  `gmvex_stroke_draw`/`_masked`/`_gradient` on the same path a glyph's fill
-  uses works today with zero new code.
-
----
