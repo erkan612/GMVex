@@ -3,8 +3,8 @@ varying vec2 v_vLocalPos;
 uniform vec2  u_gradCenter;
 uniform float u_gradRadius;
 uniform int   u_stopCount;
-uniform float u_stopPos[8];
-uniform vec4  u_stopColor[8];
+uniform float u_stopPos[32];
+uniform vec4  u_stopColor[32];
 
 void main() {
     float dist = distance(v_vLocalPos, u_gradCenter);

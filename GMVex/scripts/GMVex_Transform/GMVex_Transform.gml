@@ -1,4 +1,4 @@
-function gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0) {
+function gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0, shear_x = 0, shear_y = 0) {
     path.tox = origin_x;
     path.toy = origin_y;
 
@@ -9,7 +9,16 @@ function gmvex_path_set_transform(path, x, y, rot = 0, xscale = 1, yscale = 1, o
         full_matrix = matrix_multiply(pivot_matrix, srt_matrix);
     }
 
-    path.tmatrix = [full_matrix[0], full_matrix[4], full_matrix[1], full_matrix[5], full_matrix[12], full_matrix[13]];
+    var m = [full_matrix[0], full_matrix[4], full_matrix[1], full_matrix[5], full_matrix[12], full_matrix[13]];
+
+    if (shear_x != 0 || shear_y != 0) {
+        var skew_x_m = [1, 0, tan(degtorad(shear_x)), 1, 0, 0];
+        var skew_y_m = [1, tan(degtorad(shear_y)), 0, 1, 0, 0];
+        var shear_matrix = gmvex_svg_matrix_multiply(skew_x_m, skew_y_m);
+        m = gmvex_svg_matrix_multiply(m, shear_matrix);
+    }
+
+    path.tmatrix = m;
 }
 
 function gmvex_path_get_matrix(path) {

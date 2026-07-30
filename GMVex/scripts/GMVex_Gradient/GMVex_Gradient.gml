@@ -51,9 +51,9 @@ function gmvex_fill_draw_gradient(path, type, p0x, p0y, p1x, p1y, stops) {
         shader_set_uniform_f(shader_get_uniform(shd, "u_gradCenter"), p0x, p0y);
         shader_set_uniform_f(shader_get_uniform(shd, "u_gradRadius"), p1x);
     }
-    var stop_count = min(array_length(stops), 8);
-    var pos_arr = array_create(8, 0);
-    var col_arr = array_create(32, 0);
+    var stop_count = min(array_length(stops), 32);
+    var pos_arr = array_create(32, 0);
+    var col_arr = array_create(32 * 4, 0);
     for (var i = 0; i < stop_count; i++) {
         pos_arr[i] = stops[i][0];
         col_arr[i*4+0] = color_get_red(stops[i][1]) / 255;

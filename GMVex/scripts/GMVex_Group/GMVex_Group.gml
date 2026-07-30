@@ -13,14 +13,24 @@ function gmvex_group_add_group(group, child_group) {
     array_push(group.members, { kind: "group", ref: child_group });
 }
 
-function gmvex_group_set_transform(group, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0) {
+function gmvex_group_set_transform(group, x, y, rot = 0, xscale = 1, yscale = 1, origin_x = 0, origin_y = 0, shear_x = 0, shear_y = 0) {
     var srt_matrix = matrix_build(x, y, 0, 0, 0, rot, xscale, yscale, 1);
     var full_matrix = srt_matrix;
     if (origin_x != 0 || origin_y != 0) {
         var pivot_matrix = matrix_build(-origin_x, -origin_y, 0, 0, 0, 0, 1, 1, 1);
         full_matrix = matrix_multiply(pivot_matrix, srt_matrix);
     }
-    group.gtmatrix = [full_matrix[0], full_matrix[4], full_matrix[1], full_matrix[5], full_matrix[12], full_matrix[13]];
+
+    var m = [full_matrix[0], full_matrix[4], full_matrix[1], full_matrix[5], full_matrix[12], full_matrix[13]];
+
+    if (shear_x != 0 || shear_y != 0) {
+        var skew_x_m = [1, 0, tan(degtorad(shear_x)), 1, 0, 0];
+        var skew_y_m = [1, tan(degtorad(shear_y)), 0, 1, 0, 0];
+        var shear_matrix = gmvex_svg_matrix_multiply(skew_x_m, skew_y_m);
+        m = gmvex_svg_matrix_multiply(m, shear_matrix);
+    }
+
+    group.gtmatrix = m;
 }
 
 function gmvex_group_compose_point(acc, px, py) {
