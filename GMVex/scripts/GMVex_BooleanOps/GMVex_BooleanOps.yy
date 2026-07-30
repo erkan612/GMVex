@@ -5,8 +5,8 @@
   "isDnD":false,
   "name":"GMVex_BooleanOps",
   "parent":{
-    "name":"Boolean",
-    "path":"folders/GMVex/Boolean.yy",
+    "name":"Path",
+    "path":"folders/GMVex/Path.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",

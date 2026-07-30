@@ -5,8 +5,8 @@
   "isDnD":false,
   "name":"GMVex_HitTest",
   "parent":{
-    "name":"HitTest",
-    "path":"folders/GMVex/HitTest.yy",
+    "name":"Path",
+    "path":"folders/GMVex/Path.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",

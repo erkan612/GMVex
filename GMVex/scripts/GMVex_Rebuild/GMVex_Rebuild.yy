@@ -5,8 +5,8 @@
   "isDnD":false,
   "name":"GMVex_Rebuild",
   "parent":{
-    "name":"Core",
-    "path":"folders/GMVex/Core.yy",
+    "name":"Path",
+    "path":"folders/GMVex/Path.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",

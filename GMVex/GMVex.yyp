@@ -11,10 +11,8 @@
   "defaultScriptType":1,
   "Folders":[
     {"$GMFolder":"","%Name":"GMVex","folderPath":"folders/GMVex.yy","name":"GMVex","resourceType":"GMFolder","resourceVersion":"2.0",},
-    {"$GMFolder":"","%Name":"Boolean","folderPath":"folders/GMVex/Boolean.yy","name":"Boolean","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Core","folderPath":"folders/GMVex/Core.yy","name":"Core","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Draw","folderPath":"folders/GMVex/Draw.yy","name":"Draw","resourceType":"GMFolder","resourceVersion":"2.0",},
-    {"$GMFolder":"","%Name":"HitTest","folderPath":"folders/GMVex/HitTest.yy","name":"HitTest","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Importers","folderPath":"folders/GMVex/Importers.yy","name":"Importers","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Path","folderPath":"folders/GMVex/Path.yy","name":"Path","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Shaders","folderPath":"folders/GMVex/Shaders.yy","name":"Shaders","resourceType":"GMFolder","resourceVersion":"2.0",},
